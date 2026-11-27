@@ -100,6 +100,7 @@ select option{font-style:normal;color:#111;background:#fff}
 .clip .arrow{opacity:.35;margin:0 -2px 0 2px}
 #tw{position:static;width:100%;height:56px;cursor:ew-resize;touch-action:none}
 #track.empty .k,#track.empty #t-match,#track.empty #t-listen{display:none}
+#t-slot{max-width:170px}
 #t-sum{font-style:italic;opacity:.6;font-variant-numeric:tabular-nums}
 a{color:inherit;text-underline-offset:4px;opacity:.75}a:hover{opacity:1}
 #knobs{padding-left:92px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 26px}
@@ -149,6 +150,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radiu
       <div class="k"><label for="t-filter">filter<output id="t-filterv"></output></label><input id="t-filter" type="range" min="-1" max="1" step=".01"></div>
       <div class="k"><label for="t-level">level<output id="t-levelv"></output></label><input id="t-level" type="range" min="0" max="1" step=".01"></div>
       <button id="t-match" aria-pressed="true" title="change the track's speed so it lines up with the bars">match beat</button>
+      <select id="t-slot" aria-label="Which saved slot plays"></select>
       <span id="t-sum"></span>
       <a id="t-edit" href="editor.html">cut &amp; arrange →</a>
     </div>
@@ -436,7 +438,7 @@ let playing=false,step=0,bar=0,nextBar=null,nextT=0,timer,queue=[];
    match beat: one piece with a steady beat is sped up or slowed to the song's tempo (speed = song bpm / track bpm).
    Otherwise the speed is nudged (at most ~15%) so the row lasts a whole number of bars.
    filter knob x: left of centre lowpass 20000·(1/100)^(−x) Hz, right of centre highpass 20·200^x Hz. */
-const TR={on:true,filter:0,level:.6,match:true,files:{},clips:[],cur:0,bpm:0,srcs:[],plan:[],rate:1,solo:false,bar:0};
+const TR={slot:0,slots:[],on:true,filter:0,level:.6,match:true,files:{},clips:[],cur:0,bpm:0,srcs:[],plan:[],rate:1,solo:false,bar:0};
 const clip=()=>TR.clips[TR.cur];
 const trackLen=()=>TR.clips.reduce((x,c)=>x+c.b-c.a,0);
 function trackPlan(){
@@ -821,7 +823,10 @@ addEventListener('keyup',e=>{if(e.code==='Space')e.preventDefault()});
    The cutting happens on editor.html. Both pages share the same saved pieces (localStorage) and files (IndexedDB). */
 const TKEY='techno-track';
 const mmss=t=>Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0');
-function trackSave(){try{localStorage.setItem(TKEY,JSON.stringify({v:2,clips:TR.clips,cur:TR.cur,filter:TR.filter,level:TR.level,match:TR.match,on:TR.on}))}catch(e){}}
+const trackRead=()=>{try{return JSON.parse(localStorage.getItem(TKEY))}catch(e){return null}};
+function trackSave(){try{const st=trackRead()||{v:3,slots:[{name:'',clips:TR.clips}],slot:0};   // the editor owns the slots; this page only changes the settings and which slot plays
+  if(!st.slots){st.v=3;st.slots=[{name:'',clips:st.clips||TR.clips}];st.slot=0}
+  Object.assign(st,{slot:TR.slot,filter:TR.filter,level:TR.level,match:TR.match,on:TR.on});localStorage.setItem(TKEY,JSON.stringify(st))}catch(e){}}
 function trackBeat(){const c=TR.clips[0];TR.bpm=TR.clips.length===1&&TR.files[c.f]?detectBpm(TR.files[c.f].buf,c.a,c.b):0}
 function trackUI(){
   const n=TR.clips.length;$('track').classList.toggle('empty',!n);
@@ -829,6 +834,9 @@ function trackUI(){
   $('t-filter').value=TR.filter;$('t-level').value=TR.level;
   const x=TR.filter;$('t-filterv').textContent=Math.abs(x)<.02?'off':x<0?'low '+Math.round(20000*Math.pow(.01,-x))+' Hz':'high '+Math.round(20*Math.pow(200,x))+' Hz';
   $('t-levelv').textContent=TR.level.toFixed(2);
+  const used=TR.slots.map((x,i)=>[x,i]).filter(([x,i])=>x&&(x.clips.length||i===TR.slot));
+  $('t-slot').hidden=used.length<2;
+  $('t-slot').innerHTML=used.map(([x,i])=>`<option value="${i}"${i===TR.slot?' selected':''}>slot ${i+1}${x.name?' · '+x.name.replace(/</g,'&lt;'):''}</option>`).join('');
   $('t-sum').textContent=n?`${n} piece${n>1?'s':''} · ${mmss(trackLen())}`:'no track yet';
 }
 // decode a file and measure how much to boost it (norm)
@@ -843,14 +851,18 @@ function idb(op,key,val){return new Promise(res=>{const rq=indexedDB.open('techn
   rq.onerror=()=>res(null);rq.onsuccess=()=>{const st=rq.result.transaction('f','readwrite').objectStore('f'),r=op==='all'?st.getAll():op==='put'?st.put(val,key):st.delete(key);r.onsuccess=()=>res(r.result);r.onerror=()=>res(null)}})}
 $('t-on').onclick=()=>{TR.on=!TR.on;if(!TR.on)trackStop();else TR.bar=0;trackUI();trackSave()};
 $('t-listen').onclick=()=>{if(TR.solo)trackStop();else trackListen(TR.clips.map(c=>({c,from:c.a,len:c.b-c.a})))};
+$('t-slot').onchange=e=>{TR.slot=+e.target.value;trackStop();trackSave();trackOpen();e.target.blur()};
 $('t-match').onclick=()=>{TR.match=!TR.match;TR.bar=0;trackUI();trackSave()};
 $('t-filter').oninput=e=>{TR.filter=+e.target.value;trackParams();trackUI();trackSave()};
 $('t-level').oninput=e=>{TR.level=+e.target.value;trackParams();trackUI();trackSave()};
 // load the saved pieces and their files. Runs at start and again when you come back from the editor
 async function trackOpen(){
-  let st=null;try{st=JSON.parse(localStorage.getItem(TKEY))}catch(e){}
+  let st=trackRead();
+  if(st&&st.slots){TR.slot=Math.min(st.slot||0,st.slots.length-1);TR.slots=st.slots;st.clips=(st.slots[TR.slot]||{clips:[]}).clips}   // play the selected slot
   for(const k of (await idb('all'))||[])if(k&&k.data&&!TR.files[k.id||'old'])await trackFile(k.id||'old',k.data,k.name);
   if(!TR.files.default&&(!st||!st.clips||st.clips.some(c=>c.f==='default')))try{const r=await fetch('tracks/default.mp3');if(r.ok)await trackFile('default',await r.arrayBuffer(),'default track')}catch(e){}
+  // pieces cut from other files in the tracks folder (ids look like lib:name.mp3)
+  for(const c of (st&&st.clips)||[])if(c.f.startsWith('lib:')&&!TR.files[c.f])try{const r=await fetch('tracks/'+c.f.slice(4));if(r.ok)await trackFile(c.f,await r.arrayBuffer(),c.f.slice(4))}catch(e){}
   if(st&&st.clips)Object.assign(TR,{clips:st.clips,cur:st.cur||0,filter:st.filter,level:st.level,match:st.match,on:st.on});
   else{if(st&&st.filter!=null)Object.assign(TR,{filter:st.filter,level:st.level,match:st.match,on:st.on});
     const id=TR.files.old?'old':TR.files.default?'default':null;                  // first run, or settings from the one-piece version

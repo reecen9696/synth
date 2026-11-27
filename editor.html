@@ -41,6 +41,15 @@ h2{font-size:15px;font-weight:400;font-style:italic;opacity:.6;margin:0}
 .piece .n{font-style:italic;margin-right:6px}
 .piece small{display:block;opacity:.75;overflow:hidden;text-overflow:ellipsis}
 #empty{font-style:italic;opacity:.6}
+#slots{display:flex;flex-wrap:wrap;gap:6px}
+.slot{border:1.5px solid var(--ink);border-radius:6px;padding:4px 10px;min-width:64px;text-align:left;font-size:14px;font-variant-numeric:tabular-nums;opacity:.6}
+.slot.none{border-style:dashed;opacity:.35}
+.slot.cur{opacity:1;background:var(--ink);color:var(--bg)}
+.slot small{display:block;opacity:.75}
+input[type=text],select{font:inherit;font-style:italic;color:inherit;background:transparent;border:0;border-bottom:1.5px solid var(--ink);border-radius:0;padding:3px 2px;width:170px}
+input::placeholder{color:inherit;opacity:.45}
+select option{font-style:normal;color:#111;background:#fff}
+#saved{opacity:.8}
 </style>
 </head>
 <body>
@@ -50,6 +59,15 @@ h2{font-size:15px;font-weight:400;font-style:italic;opacity:.6;margin:0}
     <span class="sp"></span>
     <button id="add">+ add audio file</button>
     <input id="file" type="file" accept="audio/*" multiple hidden>
+  </div>
+
+  <div>
+    <h2>slots <span id="saved">· every change is saved to the selected slot</span></h2>
+    <div class="row">
+      <div id="slots" role="group" aria-label="Slots"></div>
+      <input id="sname" type="text" maxlength="24" placeholder="name this slot" aria-label="Slot name">
+      <select id="copyto" aria-label="Copy these pieces to another slot"></select>
+    </div>
   </div>
 
   <div>
@@ -96,14 +114,16 @@ h2{font-size:15px;font-weight:400;font-style:italic;opacity:.6;margin:0}
    files   -> IndexedDB 'techno-track' as {id, name, data}
    Every change is saved at once, so going back to the synth is enough. */
 const KEY='techno-track',$=id=>document.getElementById(id);
-const S={files:{},clips:[],cur:0,rest:{filter:0,level:.6,match:true,on:true}};
+const NS=8;   // how many slots
+const S={files:{},slots:Array.from({length:NS},()=>({name:'',clips:[]})),slot:0,cur:0,rest:{filter:0,level:.6,match:true,on:true},
+  get clips(){return this.slots[this.slot].clips},set clips(v){this.slots[this.slot].clips=v}};   // the pieces being edited are always the selected slot's
 let ac,cursor=0,view=[0,1],srcs=[],plan=[],playing=false;
 const clip=()=>S.clips[S.cur],file=()=>clip()&&S.files[clip().f];
 const fmt=t=>Math.floor(t/60)+':'+(t%60).toFixed(2).padStart(5,'0');
 const short=t=>Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0');
 
 /* ---------- storage ---------- */
-function save(){try{localStorage.setItem(KEY,JSON.stringify({...S.rest,v:2,clips:S.clips,cur:S.cur}))}catch(e){}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify({...S.rest,v:3,slots:S.slots,slot:S.slot,cur:S.cur}))}catch(e){}}
 function idb(op,key,val){return new Promise(res=>{const rq=indexedDB.open('techno-track',1);rq.onupgradeneeded=()=>rq.result.createObjectStore('f');
   rq.onerror=()=>res(null);rq.onsuccess=()=>{const st=rq.result.transaction('f','readwrite').objectStore('f'),r=op==='all'?st.getAll():op==='put'?st.put(val,key):st.delete(key);r.onsuccess=()=>res(r.result);r.onerror=()=>res(null)}})}
 async function decode(id,data,name){
@@ -117,11 +137,14 @@ async function open(){
   let st=null;try{st=JSON.parse(localStorage.getItem(KEY))}catch(e){}
   for(const k of (await idb('all'))||[])if(k&&k.data)await decode(k.id||'old',k.data,k.name);
   try{const r=await fetch('tracks/default.mp3');if(r.ok)await decode('default',await r.arrayBuffer(),'default track')}catch(e){}
+  // more files in the tracks folder, named in tracks/list.json as [{"file": "x.mp3", "name": "shown name"}]
+  try{const r=await fetch('tracks/list.json');if(r.ok)for(const x of await r.json()){const q=await fetch('tracks/'+x.file);if(q.ok)await decode('lib:'+x.file,await q.arrayBuffer(),x.name||x.file)}}catch(e){}
   if(st){for(const k of ['filter','level','match','on'])if(st[k]!=null)S.rest[k]=st[k]}
-  if(st&&st.clips){S.clips=st.clips;S.cur=st.cur||0}
+  if(st&&st.slots){st.slots.slice(0,NS).forEach((x,i)=>{if(x)S.slots[i]={name:x.name||'',clips:x.clips||[]}});S.slot=Math.min(st.slot||0,NS-1);S.cur=st.cur||0}
+  else if(st&&st.clips){S.clips=st.clips;S.cur=st.cur||0}
   else{const id=S.files.old?'old':S.files.default?'default':null;
     if(id&&!(st&&st.removed)){const dur=S.files[id].buf.duration;S.clips=[{f:id,a:st&&st.a<dur?st.a:0,b:st&&st.b?Math.min(st.b,dur):dur}]}}
-  S.clips=S.clips.filter(c=>S.files[c.f]).map(c=>({f:c.f,a:c.a,b:Math.min(c.b,S.files[c.f].buf.duration)}));
+  for(const x of S.slots)x.clips=x.clips.filter(c=>S.files[c.f]).map(c=>({f:c.f,a:c.a,b:Math.min(c.b,S.files[c.f].buf.duration)}));
   pick(Math.max(0,Math.min(S.cur,S.clips.length-1)),true);
 }
 async function addFile(f){
@@ -167,10 +190,21 @@ $('play').onclick=()=>playing?stop():playPiece();
 $('all').onclick=()=>playing?stop():play(S.clips.map(c=>({c,from:c.a,len:c.b-c.a})));
 
 /* ---------- lists ---------- */
+const slotLen=x=>x.clips.reduce((t,p)=>t+p.b-p.a,0);
+function slotsUI(){
+  $('slots').innerHTML=S.slots.map((x,i)=>`<button class="slot${i===S.slot?' cur':''}${x.clips.length?'':' none'}" data-s="${i}" title="${x.clips.length?'open this slot':'empty slot: open it and start cutting'}">${i+1}${x.name?' · '+x.name.replace(/</g,'&lt;'):''}<small>${x.clips.length?short(slotLen(x)):'empty'}</small></button>`).join('');
+  if(document.activeElement!==$('sname'))$('sname').value=S.slots[S.slot].name;
+  $('copyto').innerHTML='<option value="">copy these pieces to…</option>'+S.slots.map((x,i)=>i===S.slot?'':`<option value="${i}">slot ${i+1}${x.name?' · '+x.name.replace(/</g,'&lt;'):''}${x.clips.length?' (replace)':''}</option>`).join('');
+}
+$('slots').onclick=e=>{const b=e.target.closest('.slot');if(!b)return;stop();S.slot=+b.dataset.s;pick(0,true);save()};
+$('sname').oninput=e=>{S.slots[S.slot].name=e.target.value;save();slotsUI()};
+$('copyto').onchange=e=>{const i=e.target.value;if(i==='')return;
+  S.slots[+i]={name:S.slots[+i].name||S.slots[S.slot].name,clips:S.clips.map(c=>({...c}))};stop();S.slot=+i;pick(0,true);save()};
 function ui(){
+  slotsUI();
   const c=clip(),total=S.clips.reduce((x,p)=>x+p.b-p.a,0);
   $('empty').hidden=!!Object.keys(S.files).length;
-  $('files').innerHTML=Object.entries(S.files).map(([id,f])=>`<span class="file"><span class="nm" title="${f.name}">${f.name}</span><span class="len">${short(f.buf.duration)}</span><button data-new="${id}" title="add a piece from this file">+ piece</button>${id==='default'?'':`<button data-rm="${id}" title="remove this file and its pieces">×</button>`}</span>`).join('');
+  $('files').innerHTML=Object.entries(S.files).map(([id,f])=>`<span class="file"><span class="nm" title="${f.name}">${f.name}</span><span class="len">${short(f.buf.duration)}</span><button data-new="${id}" title="add a piece from this file">+ piece</button>${id==='default'||id.startsWith('lib:')?'':`<button data-rm="${id}" title="remove this file and its pieces">×</button>`}</span>`).join('');
   $('pieces').innerHTML=S.clips.map((p,i)=>`<div class="piece${i===S.cur?' cur':''}" draggable="true" data-i="${i}" style="flex-grow:${Math.max(.05,(p.b-p.a)/(total||1))}" title="drag to reorder, double-click to play"><span class="n">${i+1}</span>${(p.b-p.a).toFixed(1)} s<small>${short(p.a)}–${short(p.b)} · ${S.files[p.f].name}</small></div>`).join('');
   $('total').textContent=S.clips.length?`· ${fmt(total)} in all`:'';
   for(const k of ['setA','setB','split','dup','del','play','all','zpiece'])$(k).disabled=!c;
@@ -180,7 +214,7 @@ function ui(){
 function readout(){const c=clip();$('time').innerHTML=c?`<span><b>cursor</b>${fmt(cursor)}</span><span><b>piece</b>${fmt(c.a)} – ${fmt(c.b)}</span><span><b>length</b>${(c.b-c.a).toFixed(2)} s</span>`:''}
 $('files').onclick=e=>{const b=e.target.closest('button');if(!b)return;
   if(b.dataset.new){const id=b.dataset.new;S.clips.splice(S.cur+1,0,{f:id,a:0,b:S.files[id].buf.duration});pick(Math.min(S.cur+1,S.clips.length-1),true);changed()}
-  else{const id=b.dataset.rm;S.clips=S.clips.filter(p=>p.f!==id);delete S.files[id];idb('delete',id);pick(Math.max(0,Math.min(S.cur,S.clips.length-1)),true);changed()}};
+  else{const id=b.dataset.rm;for(const x of S.slots)x.clips=x.clips.filter(p=>p.f!==id);delete S.files[id];idb('delete',id);pick(Math.max(0,Math.min(S.cur,S.clips.length-1)),true);changed()}};
 {const P=$('pieces');let from=null;
   P.onclick=e=>{const el=e.target.closest('.piece');if(el)pick(+el.dataset.i)};
   P.ondblclick=e=>{const el=e.target.closest('.piece');if(el){pick(+el.dataset.i);cursor=clip().a;playPiece()}};
@@ -251,7 +285,7 @@ function draw(){
 
 /* ---------- keys ---------- */
 addEventListener('keydown',e=>{
-  if(e.metaKey||e.ctrlKey||e.altKey)return;
+  if(e.metaKey||e.ctrlKey||e.altKey||/INPUT|SELECT/.test(e.target.tagName))return;
   const k=e.key.toLowerCase(),step=(view[1]-view[0])/200*(e.shiftKey?10:1);
   if(e.code==='Space'){e.preventDefault();if(!e.repeat)playing?stop():playPiece()}
   else if(k==='[')ops.setA();else if(k===']')ops.setB();
