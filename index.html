@@ -3,124 +3,390 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Techno Synth</title>
-<link rel="stylesheet" href="css/style.css">
+<title>Techno Function Synth</title>
+<link href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: one flat colour field, one graph, one formula. Ink on paper, a single dot for time. */
+:root{
+  --bg:#cfe05e;      /* field, set per scene */
+  --ink:#141a05;     /* strokes and text */
+  --dot:#e8334f;     /* playhead and play button */
+  --faint:rgba(20,26,5,.45);
+  --font:"STIX Two Text","Times New Roman",Times,serif;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:17px;
+  display:flex;flex-direction:column;transition:background .4s,color .4s;overflow:auto}
+.wrap{flex:1;display:flex;flex-direction:column;gap:14px;width:100%;max-width:1180px;margin:0 auto;padding:18px 22px 22px;min-height:560px}
+header,.bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 22px}
+#scenes{display:flex;flex-wrap:wrap;gap:2px 16px}
+.sp{flex:1}
+button{font:inherit;color:inherit;background:none;border:0;padding:4px 2px;cursor:pointer;opacity:.5}
+button:hover{opacity:.8}
+button[aria-pressed="true"]{opacity:1;text-decoration:underline;text-underline-offset:5px;text-decoration-thickness:1.5px}
+button:focus-visible,input:focus-visible,canvas:focus-visible{outline:1.5px dashed var(--ink);outline-offset:3px}
+#play{width:46px;height:46px;border-radius:50%;background:var(--dot);opacity:1;padding:0;display:grid;place-items:center;flex:none}
+#play i{display:block;width:0;height:0;border-left:14px solid var(--bg);border-top:9px solid transparent;border-bottom:9px solid transparent;margin-left:4px}
+#play.on i{width:14px;height:14px;border:0;background:var(--bg);margin:0}
+.tempo{display:flex;align-items:center;gap:10px;font-variant-numeric:tabular-nums}
+.tempo input{width:120px}
+#about{font-style:italic;margin:-6px 0 0;opacity:.75}
+main{flex:1;position:relative;min-height:260px}
+canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;touch-action:manipulation}
+#formula{font-size:clamp(16px,2.1vw,23px);min-height:2.6em;overflow-x:auto;white-space:nowrap;padding:4px 0}
+#formula i{font-style:italic}
+#formula sup,#formula sub{font-size:.68em}
+.fr{display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:.8em;line-height:1.15;margin:0 2px}
+.fr span:first-child{border-bottom:1px solid currentColor;padding:0 3px}
+#knobs{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 26px}
+.k label{display:flex;justify-content:space-between;font-style:italic;font-size:15px}
+.k output{font-style:normal;font-variant-numeric:tabular-nums;opacity:.7}
+input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;width:100%;height:24px;margin:0;display:block}
+input[type=range]::-webkit-slider-runnable-track{height:1.5px;background:var(--ink)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--ink);margin-top:-6.5px}
+input[type=range]::-moz-range-track{height:1.5px;background:var(--ink)}
+input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radius:50%;background:var(--ink)}
+.hint{font-size:14px;color:var(--faint);font-style:italic;margin:0}
+</style>
 </head>
 <body>
-<header class="top">
-  <div class="brand">techno<b>synth</b></div>
-  <button id="play" class="play" data-help="Play or stop (Space)." aria-label="Play"><i></i></button>
-  <label class="field" data-help="Tempo in beats per minute. Techno sits between 118 and 160.">
-    <span>Tempo</span><input id="bpm" type="number" min="60" max="200" step="1"><small>bpm</small>
-  </label>
-  <button id="tap" data-help="Tap tempo: click in time with the beat four or more times.">Tap</button>
-  <label class="field" data-help="Swing pushes every second 16th note late. 50% is straight, 58% is a gentle shuffle, 66% is a triplet feel.">
-    <span>Swing</span><input id="swing" type="range" min="50" max="75" step="1"><output id="swingv"></output>
-  </label>
-  <label class="field" data-help="Key and scale for all the melodic parts. Change them any time; notes follow.">
-    <span>Key</span><select id="key"></select><select id="scale"></select>
-  </label>
-  <span class="sp"></span>
-  <div class="tools">
-    <button id="undo" data-help="Undo (Ctrl/Cmd+Z)." title="Undo">↶</button>
-    <button id="redo" data-help="Redo (Shift+Ctrl/Cmd+Z)." title="Redo">↷</button>
-    <button id="midi" data-help="Connect a MIDI keyboard or pad controller. Notes play the selected synth; with a drum selected, pads follow the General MIDI drum map (36 kick, 38 snare, 42 hat...).">MIDI</button>
-    <button id="rec" data-help="Live record: while playing, MIDI notes are written into the pattern at the nearest step." aria-pressed="false">● Rec</button>
-    <button id="save" data-help="Download this project as a .json file.">Save</button>
-    <button id="open" data-help="Open a saved .json project.">Open</button>
-    <button id="share" data-help="Copy a link that contains the whole project.">Share</button>
-    <button id="export" data-help="Render to a WAV file: the current pattern (4 bars) in loop mode, or the whole song in song mode.">Export WAV</button>
-    <button id="helpBtn" class="q" data-help="How it works.">?</button>
-    <input id="file" type="file" accept=".json,application/json" hidden>
+<div class="wrap">
+  <header>
+    <div id="scenes" role="group" aria-label="Scene"></div>
+    <span class="sp"></span>
+    <div class="tempo"><input id="bpm" type="range" min="110" max="160" step="1" aria-label="Tempo"><span id="bpmv"></span></div>
+  </header>
+  <p id="about"></p>
+
+  <main><canvas id="cv" tabindex="0" aria-label="Pattern graph. Click to add or remove hits."></canvas></main>
+
+  <div class="bar">
+    <button id="play" aria-label="Play"><i></i></button>
+    <div id="voices" role="group" aria-label="Voice"></div>
+    <span class="sp"></span>
+    <button id="new">new pattern</button>
+    <button id="mute">mute</button>
   </div>
-</header>
 
-<section class="genrebar">
-  <label class="field" data-help="Pick a style. Make track builds a whole arrangement (intro, groove, main, break, build, drop, peak, outro) in that style.">
-    <span>Style</span><select id="genre"></select>
-  </label>
-  <button id="make" class="primary" data-help="Generate a full track in this style: sounds, tempo, key, 8 patterns and a song order. Press again for a different one.">Make track</button>
-  <button id="sound" data-help="Load only the style's sounds, tempo and key. Your patterns stay.">Use sounds only</button>
-  <label class="field" data-help="Song length for Make track. Club length doubles every section (about 5 to 7 minutes), the way DJs need it for mixing.">
-    <span>Length</span><select id="songLen"><option value="1">Short · 2–3 min</option><option value="2">Club · 5–7 min</option></select>
-  </label>
-  <label class="field" data-help="In song mode, play a snare fill on the last bar of every 8 bar phrase.">
-    <input id="fills" type="checkbox"><span>Auto fills</span>
-  </label>
-  <p id="blurb" class="blurb"></p>
-</section>
-
-<section class="patbar">
-  <div class="seg" id="mode" data-help="Loop: repeat the selected pattern. Song: play the patterns in the order below.">
-    <button data-m="pattern">Loop pattern</button><button data-m="song">Play song</button>
-  </div>
-  <div id="pats" class="pats" data-help="8 patterns, one bar each. Click to edit. While playing in loop mode, the new pattern starts at the next bar. Keys 1 to 8."></div>
-  <div class="pattools">
-    <button id="copy" data-help="Copy this pattern.">Copy</button>
-    <button id="paste" data-help="Paste over this pattern.">Paste</button>
-    <button id="mutate" data-help="Mutate: make small random changes to every part in this pattern. Good for variations between sections.">Mutate</button>
-    <button id="vary" data-help="Re-roll this pattern in the current style.">Re-roll</button>
-    <button id="clear" data-help="Clear every track in this pattern.">Clear</button>
-  </div>
-</section>
-
-<section id="song" class="song" data-help="Song order. Each block is a pattern repeated for some bars. Click a block to edit it."></section>
-
-<section class="toolbar">
-  <span class="tlabel">Click does</span>
-  <div class="seg" id="tools">
-    <button data-t="draw" data-help="Draw: click a step to turn it on or off. Drag to paint a row.">Draw</button>
-    <button data-t="accent" data-help="Accent: click steps to make them louder and brighter (also Shift+click in Draw).">Accent</button>
-    <button data-t="ratchet" data-help="Ratchet: click an active step to split it into 2, 3 or 4 fast hits. Rolls and stutters.">Ratchet</button>
-    <button data-t="chance" data-help="Chance: click an active step to make it play only some of the time: 75%, 50%, 25%.">Chance</button>
-  </div>
-  <span class="sp"></span>
-  <span id="pos" class="pos" data-help="Where the playhead is. Techno thinks in 8 and 16 bar phrases: change something every 8 bars."></span>
-</section>
-
-<main id="grid" class="grid" aria-label="Step sequencer"></main>
-
-<section class="lower">
-  <div class="panel" id="trackPanel"></div>
-  <div class="panel master">
-    <h2>Master</h2>
-    <div class="filter" data-help="DJ filter. Left closes a lowpass (muffled), right opens a highpass (thin). Double-click to centre.">
-      <div class="flabels"><span>lowpass</span><span>off</span><span>highpass</span></div>
-      <input id="mfilter" type="range" min="-1" max="1" step="0.005">
-    </div>
-    <div id="mknobs" class="knobs"></div>
-    <canvas id="scope" height="90" aria-hidden="true"></canvas>
-  </div>
-</section>
-
-<footer id="hint" class="hint">Hover over anything to see what it does. Space plays.</footer>
-
-<div id="help" class="overlay" hidden>
-  <div class="dlg">
-    <button class="close" id="helpClose" aria-label="Close">×</button>
-    <h2>How it works</h2>
-    <ol>
-      <li><b>Pick a style</b> and press <b>Make track</b>. You get 8 patterns (A to H) and a song order.</li>
-      <li>Press <b>Play</b> (or Space). <b>Loop pattern</b> repeats one bar, <b>Play song</b> runs the whole order.</li>
-      <li>The grid is one bar of 16 steps. Each row is an instrument. <b>Click</b> a step to turn it on, <b>drag</b> to paint, <b>Shift+click</b> for an accent (louder).</li>
-      <li>Click an instrument's <b>name</b> to open its sounds below. For melodic parts you get a note grid: click a row to pick the note, then mark accents and slides.</li>
-      <li><b>Click does</b> above the grid switches what a click means: draw, accent, ratchet (2–4 fast hits in one step) or chance (the step only plays sometimes).</li>
-      <li><b>M</b> mutes, <b>S</b> solos. The steps number sets the loop length per track; odd lengths against 16 make polymeters.</li>
-      <li>The <b>Master</b> filter is for live sweeps. <b>Export WAV</b> renders audio.</li>
-      <li><b>MIDI</b> connects a keyboard or pad controller. Turn on <b>● Rec</b> while playing to record what you play into the pattern.</li>
-    </ol>
-    <h3>Keys</h3>
-    <p><kbd>Space</kbd> play · <kbd>1</kbd>–<kbd>8</kbd> pattern · <kbd>Ctrl/Cmd+Z</kbd> undo · <kbd>↑</kbd><kbd>↓</kbd> select instrument · <kbd>M</kbd> mute selected · <kbd>S</kbd> solo selected · <kbd>R</kbd> re-roll selected track · <kbd>Esc</kbd> close</p>
-    <h3>The maths</h3>
-    <p>Every sound is a formula, shown under its controls with live values. Kicks are sines with an exponential pitch drop, hats are six square waves at the TR-808's clashing frequencies, the acid line is a saw through a resonant 24 dB lowpass with an exponential envelope, stabs and pads are detuned saws in chord shapes, plucks are two-operator FM. Euclidean rhythms spread k hits over n steps with <i>(i·k) mod n &lt; k</i>.</p>
-  </div>
+  <div id="formula" aria-live="off"></div>
+  <div id="knobs"></div>
+  <p class="hint">Click the graph to add or remove hits. On acid, click a note again for accent, again for slide. Space plays.</p>
 </div>
 
-<script src="js/voices.js"></script>
-<script src="js/engine.js"></script>
-<script src="js/theory.js"></script>
-<script src="js/genres.js"></script>
-<script src="js/seq.js"></script>
-<script src="js/ui.js"></script>
+<script>
+/* ---------- data ---------- */
+const TABS=['kick','bass','clap','hat','open','acid'];
+const BAND={acid:[.05,.30],open:[.34,.40],hat:[.43,.49],clap:[.52,.58],kick:[.62,.84],bass:[.89,.97]};
+const MODES={phrygian:[0,1,3,5,7,8,10,12],minor:[0,2,3,5,7,8,10,12],dorian:[0,2,3,5,7,9,10,12]};
+const NOTE=['C','C♯','D','E♭','E','F','F♯','G','A♭','A','B♭','B'];
+const hz=m=>440*Math.pow(2,(m-69)/12);       // f = 440 · 2^((n−69)/12)
+// TR-808 metal: six square waves at these clashing frequencies (Werner, Abel & Smith 2014)
+const METAL=[205.3,304.4,369.6,522.7,540,800];
+const DEF={
+  kick:[['pitch','pitch',35,70,50,'Hz'],['decay','decay',.1,1.2,.38,'s'],['drive','drive',1,12,2.5,''],['rumble','rumble',0,1,0,''],['level','level',0,1,.9,'']],
+  bass:[['cut','cutoff',80,1200,300,'Hz'],['decay','decay',.05,.8,.16,'s'],['level','level',0,1,.6,'']],
+  clap:[['tone','tone',600,3000,1100,'Hz'],['decay','decay',.05,.6,.22,'s'],['level','level',0,1,.5,'']],
+  hat:[['tone','tone',5000,13000,8500,'Hz'],['decay','decay',.015,.12,.045,'s'],['level','level',0,1,.4,'']],
+  open:[['tone','tone',5000,13000,8000,'Hz'],['decay','decay',.1,.8,.3,'s'],['level','level',0,1,.35,'']],
+  acid:[['cut','cutoff',100,2000,360,'Hz'],['res','resonance',.5,24,13,''],['env','env mod',0,5000,2400,'Hz'],['decay','decay',.05,.8,.22,'s'],['level','level',0,1,.5,'']]
+};
+const defaults=()=>{const p={};for(const v of TABS){p[v]={};for(const d of DEF[v])p[v][d[0]]=d[4]}return p};
+const M={};for(const v of TABS)M[v]=false;
+
+const b=s=>[...s].map(c=>c==='x'?1:0);
+const a=s=>s.split(' ').map(t=>t==='-'?null:{d:+t[0],a:t.includes('a'),s:t.includes('s')});
+const none='- - - - - - - - - - - - - - - -';
+/* Scenes: one per techno style. Tempo, swing (50% straight, 66% triplet), root
+   note (MIDI), mode, colours, sound settings and the pattern. */
+const SCENES=[
+ {name:'150',about:'150 bpm techno: driving distorted kick, rolling bass, acid on top',bpm:150,swing:50,root:28,mode:'phrygian',bg:'#e8334f',ink:'#1a0508',dot:'#f4e9d0',
+  set:{kick:{pitch:52,decay:.3,drive:8,rumble:.35},bass:{cut:240,decay:.1},clap:{tone:1300,decay:.18},hat:{tone:10000,decay:.035},acid:{res:17,env:2600,decay:.18,level:.45}},
+  pat:{kick:b('x...x...x...x...'),bass:b('.xxx.xxx.xxx.xxx'),clap:b('....x.......x...'),hat:b('xxxxxxxxxxxxxxxx'),open:b('..x...x...x...x.'),acid:a('0a 0 - 0 3s 1 - 0 0a - 0 7s 4 0 1a -')}},
+ {name:'detroit',about:'soulful machine funk, swung hats, dorian minor',bpm:128,swing:56,root:29,mode:'dorian',bg:'#1c3fa0',ink:'#f4bfe9',dot:'#7be33a',
+  set:{kick:{pitch:52,decay:.32,drive:2},bass:{cut:500},hat:{tone:10000}},
+  pat:{kick:b('x...x...x...x...'),bass:b('.xx..xx..xx..xx.'),clap:b('....x.......x...'),hat:b('x.xxx.xxx.xxx.xx'),open:b('..x...x...x...x.'),acid:a(none)}},
+ {name:'berlin',about:'dark warehouse: rumbling kick, off-beat bass, phrygian',bpm:134,swing:50,root:30,mode:'phrygian',bg:'#cfe05e',ink:'#141a05',dot:'#e8334f',
+  set:{kick:{pitch:46,decay:.45,drive:4,rumble:.55},bass:{cut:200,decay:.14}},
+  pat:{kick:b('x...x...x...x...'),bass:b('..x...x...x...x.'),clap:b('............x...'),hat:b('xx.xxx.xxx.xxx.x'),open:b('................'),acid:a(none)}},
+ {name:'minimal',about:'less is more: short kick, sparse bass, lots of swing',bpm:125,swing:60,root:33,mode:'minor',bg:'#f3efe4',ink:'#22201c',dot:'#e8334f',
+  set:{kick:{pitch:56,decay:.2,drive:1.5},bass:{cut:900,decay:.12},clap:{tone:1500,decay:.12}},
+  pat:{kick:b('x...x...x...x...'),bass:b('...x..x....x.x..'),clap:b('....x.......x...'),hat:b('..x...x...x...x.'),open:b('................'),acid:a('- - - - - - - 4 - - - - - - 0a -')}},
+ {name:'dub',about:'soft kick, deep sub, endless echo',bpm:120,swing:54,root:26,mode:'minor',bg:'#0f3d3e',ink:'#bde8d8',dot:'#f2c14e',
+  set:{kick:{pitch:48,decay:.4,drive:1.5},bass:{cut:160,decay:.35},hat:{tone:7000,level:.3},acid:{cut:500,res:4,env:800,decay:.3,level:.35}},
+  pat:{kick:b('x...x...x...x...'),bass:b('x.........x.....'),clap:b('................'),hat:b('xxxxxxxxxxxxxxxx'),open:b('..x...x...x...x.'),acid:a('- - - 0 - - - - - 0 - - - - 0 -')}},
+ {name:'acid',about:'a 303 line over a hard 909: turn cutoff and resonance while it plays',bpm:138,swing:52,root:31,mode:'phrygian',bg:'#ee6a3a',ink:'#1d0c05',dot:'#fff3c4',
+  set:{kick:{drive:5},acid:{res:16,env:2800}},
+  pat:{kick:b('x...x...x...x...'),bass:b('................'),clap:b('....x.......x...'),hat:b('x.xxx.xxx.xxx.xx'),open:b('..x...x...x...x.'),acid:a('0 - 0a 0 - 3s 4 - 0 0a - 7s 4 - 1a 0')}},
+ {name:'hard',about:'fast and distorted: pounding kick, rolling bass',bpm:150,swing:50,root:28,mode:'phrygian',bg:'#f2b6e6',ink:'#1b2f8a',dot:'#e8334f',
+  set:{kick:{pitch:52,decay:.3,drive:9,rumble:.3},bass:{cut:260,decay:.1}},
+  pat:{kick:b('x...x...x...x...'),bass:b('.xxx.xxx.xxx.xxx'),clap:b('....x.......x...'),hat:b('xxxxxxxxxxxxxxxx'),open:b('..x...x...x...x.'),acid:a(none)}},
+ {name:'industrial',about:'machines and metal: broken kick, heavy drive',bpm:136,swing:50,root:25,mode:'phrygian',bg:'#9aa0a6',ink:'#111214',dot:'#ff3b1f',
+  set:{kick:{pitch:44,decay:.5,drive:11,rumble:.7},clap:{tone:900,decay:.4},hat:{tone:6000}},
+  pat:{kick:b('x...x...x..xx...'),bass:b('..x...x...x...x.'),clap:b('....x.......x...'),hat:b('x.x.x.x.x.x.x.x.'),open:b('................'),acid:a(none)}},
+ {name:'hypnotic',about:'one short phrase looping until it moves you',bpm:130,swing:52,root:27,mode:'phrygian',bg:'#3b1f5e',ink:'#ffd36e',dot:'#5ef2c2',
+  set:{kick:{decay:.42,drive:3,rumble:.45},acid:{res:6,env:1200,decay:.15,cut:400}},
+  pat:{kick:b('x...x...x...x...'),bass:b('..x...x...x...x.'),clap:b('................'),hat:b('x.xxx.xxx.xxx.xx'),open:b('..x...x...x...x.'),acid:a('0a - 3 0 - 4 - 0a - 3 0 - 4 - 0a -')}},
+ {name:'electro',about:'broken 808 beat, not four on the floor',bpm:128,swing:50,root:28,mode:'minor',bg:'#101820',ink:'#7df9ff',dot:'#ff2e88',
+  set:{kick:{pitch:45,decay:.8,drive:1.5},bass:{cut:600,decay:.4}},
+  pat:{kick:b('x.....x...x.....'),bass:b('...x......x..x..'),clap:b('....x.......x...'),hat:b('xxx.xxxxxx.xxxx.'),open:b('...............x'),acid:a('- - 0 - - - 7s 4 - - 0a - - - 3 -')}},
+ {name:'ambient',about:'deep and slow: half-time kick, long sub',bpm:116,swing:54,root:27,mode:'dorian',bg:'#dfe7f2',ink:'#2a3550',dot:'#e8334f',
+  set:{kick:{pitch:46,decay:.45,drive:1.2,level:.7},bass:{cut:180,decay:.7},hat:{level:.25}},
+  pat:{kick:b('x.......x.......'),bass:b('x.......x.......'),clap:b('................'),hat:b('..x...x...x...x.'),open:b('................'),acid:a('- - - - 4 - - - - - - 7 - - - -')}}
+];
+for(const s of SCENES){s.P=defaults();for(const v in s.set)Object.assign(s.P[v],s.set[v])}
+let scene=SCENES[0],pat=scene.pat,P=scene.P,bpm=scene.bpm,sel='kick';
+const SCALE=()=>MODES[scene.mode];
+const ROOT=()=>hz(scene.root);
+
+/* ---------- audio ---------- */
+let ac,N={},curves={};
+// soft clip y = tanh(kx) / tanh(k)
+const curve=k=>{k=Math.round(k*4)/4;if(!curves[k]){const c=new Float32Array(1024);for(let i=0;i<1024;i++){const x=i/511.5-1;c[i]=Math.tanh(k*x)/Math.tanh(k)}curves[k]=c}return curves[k]};
+const G=v=>{const g=ac.createGain();g.gain.value=v;return g};
+const F=(type,f,q)=>{const n=ac.createBiquadFilter();n.type=type;n.frequency.value=f;if(q)n.Q.value=q;return n};
+const chain=(...n)=>{for(let i=0;i<n.length-1;i++)n[i].connect(n[i+1]);return n[0]};
+// reverb impulse: noise falling 60 dB over rt seconds, h(t) = n(t) · 10^(−3t/rt)
+function impulse(rt){const len=ac.sampleRate*rt|0,buf=ac.createBuffer(2,len,ac.sampleRate);
+  for(let c=0;c<2;c++){const d=buf.getChannelData(c);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(10,-3*i/len)}return buf}
+
+function initAudio(){
+  if(ac)return;
+  ac=new (window.AudioContext||window.webkitAudioContext)();
+  // master: compressor then soft clip, the usual techno bus glue
+  const comp=ac.createDynamicsCompressor();comp.threshold.value=-12;comp.ratio.value=4;comp.attack.value=.005;comp.release.value=.12;
+  const clip=ac.createWaveShaper();clip.curve=curve(1.5);
+  N.master=G(1);chain(N.master,comp,clip,G(.8),ac.destination);
+  // sidechain bus: everything low ducks when the kick hits
+  N.duck=G(1);N.duck.connect(N.master);
+  // noise source material
+  N.noise=ac.createBuffer(1,ac.sampleRate*2,ac.sampleRate);const d=N.noise.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+  // dotted-eighth delay: 60/bpm · 0.75 s
+  N.dly=ac.createDelay(1);N.dSend=G(1);const fb=G(.45);
+  chain(N.dSend,N.dly,F('highpass',500),G(.5),N.master);N.dly.connect(fb);fb.connect(N.dly);
+  // room
+  const rv=ac.createConvolver();rv.buffer=impulse(1.6);N.vSend=G(1);chain(N.vSend,rv,F('highpass',600),G(.35),N.master);
+  // rumble: kick into reverb, steep lowpass (48 dB), distorted, lowpassed again, ducked
+  const rr=ac.createConvolver();rr.buffer=impulse(1.4);const rs=ac.createWaveShaper();rs.curve=curve(5);
+  N.rSend=G(1);N.rOut=G(0);chain(N.rSend,rr,F('lowpass',150,.54),F('lowpass',150,1.31),rs,F('lowpass',170,.54),F('lowpass',170,1.31),N.rOut,N.duck);
+  // acid: one saw, always running, into a 24 dB resonant lowpass (TB-303 style)
+  N.ao=ac.createOscillator();N.ao.type='sawtooth';N.ao.frequency.value=98;
+  const as=ac.createWaveShaper();as.curve=curve(2.5);
+  N.f1=F('lowpass',400,11);N.f2=F('lowpass',400,.7);N.vca=G(0);N.aLv=G(.5);N.acc=0;
+  chain(N.ao,G(.6),N.f1,N.f2,F('highpass',40,.7),as,N.vca,N.aLv,N.duck);const ad=G(.35);N.aLv.connect(ad);ad.connect(N.dSend);
+  N.ao.start();
+  applyParams();
+}
+function applyParams(){
+  if(!ac)return;
+  N.rOut.gain.value=P.kick.rumble*2;
+  N.f1.Q.value=P.acid.res;N.aLv.gain.value=P.acid.level*.7;
+  N.dly.delayTime.value=60/bpm*.75;
+}
+function noiseSrc(t,dur){const s=ac.createBufferSource();s.buffer=N.noise;s.loop=true;s.start(t,Math.random());s.stop(t+dur);return s}
+
+function kick(t){
+  const p=P.kick,o=ac.createOscillator(),g=G(0),sh=ac.createWaveShaper(),lv=G(p.level);
+  sh.curve=curve(p.drive);
+  o.frequency.setValueAtTime(p.pitch*6,t);o.frequency.setTargetAtTime(p.pitch,t,.016);   // pitch sweep is the punch
+  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(1,t+.0015);g.gain.setTargetAtTime(0,t+.012,p.decay/5);
+  chain(o,g,sh,lv,N.master);sh.connect(N.rSend);
+  o.start(t);o.stop(t+p.decay*1.5+.1);
+  const c=noiseSrc(t,.03),cg=G(0);cg.gain.setValueAtTime(.25,t);cg.gain.exponentialRampToValueAtTime(.001,t+.01);
+  chain(c,F('bandpass',3500,.8),cg,lv);
+  N.duck.gain.cancelScheduledValues(t);N.duck.gain.setTargetAtTime(.15,t,.002);N.duck.gain.setTargetAtTime(1,t+.02,.07);
+}
+function bass(t){
+  const p=P.bass,o=ac.createOscillator(),f=F('lowpass',p.cut,2),g=G(0);
+  o.type='sawtooth';o.frequency.value=ROOT();
+  f.frequency.setValueAtTime(p.cut*3,t);f.frequency.setTargetAtTime(p.cut,t,.03);
+  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(1,t+.003);g.gain.setTargetAtTime(0,t+.01,p.decay/3);
+  chain(o,f,g,G(p.level),N.duck);o.start(t);o.stop(t+p.decay*2+.1);
+}
+function clap(t){
+  // four hands about 11 ms apart, then the tail, through a 1.1 kHz bandpass (909 circuit)
+  const p=P.clap,s=noiseSrc(t,p.decay+.3),g=G(0),lv=G(p.level);
+  g.gain.setValueAtTime(0,t);
+  for(let k=0;k<4;k++){g.gain.setValueAtTime(k<3?1:.8,t+k*.011);g.gain.linearRampToValueAtTime(.05,t+k*.011+.009)}
+  g.gain.setValueAtTime(.75,t+.034);g.gain.setTargetAtTime(0,t+.034,p.decay/5);
+  chain(s,F('highpass',500),F('bandpass',p.tone,2),g,lv,N.master);
+  const v=G(.5);lv.connect(v);v.connect(N.vSend);const dl=G(.12);lv.connect(dl);dl.connect(N.dSend);
+}
+function hat(t,p,open){
+  // six squares -> bandpass at tone and 3.44 kHz -> highpass; a closed hat chokes the open one
+  const bus=G(1),hi=F('bandpass',p.tone*.835,1.2),lo=F('bandpass',3440,1.5),sum=G(1),g=G(0),lv=G(p.level);
+  bus.connect(hi);hi.connect(sum);bus.connect(lo);chain(lo,G(.25),sum);
+  chain(sum,F('highpass',Math.min(p.tone*.75,7500),.9),g,lv,N.master);
+  if(!open&&N.openG){N.openG.gain.cancelScheduledValues(t);N.openG.gain.setTargetAtTime(0,t,.0015);N.openG=null}
+  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(1,t+.0008);g.gain.setTargetAtTime(0,t+.0008,p.decay/5);
+  if(open)N.openG=g;
+  const v=G(.12);lv.connect(v);v.connect(N.vSend);
+  const n=noiseSrc(t,p.decay+.1),ng=G(.25);n.connect(ng);ng.connect(bus);
+  for(const f of METAL){const o=ac.createOscillator(),og=G(.12);o.type='square';o.frequency.value=f;chain(o,og,bus);o.start(t);o.stop(t+p.decay+.1)}
+}
+function acid(i,t,sd){
+  const s=pat.acid[i];if(!s)return;
+  const p=P.acid,prev=pat.acid[(i+15)%16],next=pat.acid[(i+1)%16],tied=prev&&prev.s;
+  const f=ROOT()*2*Math.pow(2,SCALE()[s.d]/12);
+  if(tied){N.ao.frequency.cancelScheduledValues(t);N.ao.frequency.setTargetAtTime(f,t,.02)}   // slide: 60 ms glide, no retrigger
+  else{
+    N.ao.frequency.cancelScheduledValues(t);N.ao.frequency.setValueAtTime(f,t);
+    // 303 accent: filter decay is forced to 0.2 s and back-to-back accents stack
+    N.acc=s.a?Math.min(2.2,(prev&&prev.a?N.acc*.6:0)+1):0;
+    const peak=Math.min(14000,p.cut+p.env*(1+.7*N.acc)),dec=s.a?.2:p.decay;
+    for(const n of [N.f1,N.f2]){n.frequency.cancelScheduledValues(t);n.frequency.setValueAtTime(peak,t);n.frequency.setTargetAtTime(p.cut,t,dec/3)}
+    N.vca.gain.cancelScheduledValues(t);N.vca.gain.setTargetAtTime(s.a?1:.6,t,.003);
+  }
+  if(!(s.s&&next))N.vca.gain.setTargetAtTime(0,t+sd*.55,.012);
+}
+function fire(i,t){
+  const sd=60/bpm/4;
+  if(pat.kick[i]&&!M.kick)kick(t);
+  if(pat.bass[i]&&!M.bass)bass(t);
+  if(pat.clap[i]&&!M.clap)clap(t);
+  if(pat.hat[i]&&!M.hat)hat(t,P.hat,false);
+  if(pat.open[i]&&!M.open)hat(t,P.open,true);
+  if(!M.acid)acid(i,t,sd);
+}
+
+/* ---------- clock: schedule 100 ms ahead on the audio clock, poll every 25 ms ----------
+   swing pushes every second 16th late by (swing − 50%) · 2 · one step */
+let playing=false,step=0,nextT=0,timer,queue=[];
+function tick(){
+  const sd=60/bpm/4;
+  while(nextT<ac.currentTime+.1){const sw=step%2?(scene.swing/100-.5)*2*sd:0;fire(step,nextT+sw);queue.push({s:step,t:nextT});nextT+=sd;step=(step+1)%16}
+  timer=setTimeout(tick,25);
+}
+function toggle(){
+  initAudio();
+  if(playing){clearTimeout(timer);playing=false;queue=[];N.vca.gain.cancelScheduledValues(0);N.vca.gain.setTargetAtTime(0,ac.currentTime,.01)}
+  else{ac.resume();step=0;nextT=ac.currentTime+.06;playing=true;tick()}
+  const pb=document.getElementById('play');pb.classList.toggle('on',playing);pb.setAttribute('aria-label',playing?'Stop':'Play');
+}
+
+/* ---------- graph ---------- */
+const cv=document.getElementById('cv'),cx=cv.getContext('2d');
+let W=0,H=0,L=34,R=30,T=14,B=10;
+new ResizeObserver(()=>{const r=cv.getBoundingClientRect(),d=devicePixelRatio||1;W=r.width;H=r.height;cv.width=W*d;cv.height=H*d;cx.setTransform(d,0,0,d,0,0)}).observe(cv);
+const X=i=>L+i*(W-L-R)/16,Y=n=>T+n*(H-T-B);
+const acidY=d=>Y(BAND.acid[1])-(d/7)*(Y(BAND.acid[1])-Y(BAND.acid[0]));
+function draw(){
+  requestAnimationFrame(draw);if(!W)return;
+  cx.clearRect(0,0,W,H);
+  const ink=scene.ink,sw=X(1)-X(0),sd=60/bpm/4;
+  cx.strokeStyle=cx.fillStyle=ink;cx.lineCap='round';cx.lineJoin='round';
+  // axes
+  cx.globalAlpha=.8;cx.lineWidth=1.2;const ax=Y(.70);
+  cx.beginPath();cx.moveTo(X(0)-12,ax);cx.lineTo(X(16)+16,ax);cx.moveTo(X(0),Y(1));cx.lineTo(X(0),T);cx.stroke();
+  cx.beginPath();cx.moveTo(X(16)+22,ax);cx.lineTo(X(16)+14,ax-3.5);cx.lineTo(X(16)+14,ax+3.5);cx.fill();
+  cx.beginPath();cx.moveTo(X(0),T-8);cx.lineTo(X(0)-3.5,T);cx.lineTo(X(0)+3.5,T);cx.fill();
+  cx.beginPath();for(let i=4;i<=16;i+=4){cx.moveTo(X(i),ax-4);cx.lineTo(X(i),ax+4)}cx.stroke();
+  cx.font='italic 16px "STIX Two Text",Times,serif';cx.fillText('x',X(16)+18,ax+18);cx.fillText('y',X(0)-20,T+6);
+
+  for(const v of ['acid','open','hat','clap','kick','bass']){
+    const [b0,b1]=BAND[v],top=Y(b0),bot=Y(b1),mid=(top+bot)/2,on=v===sel;
+    // faint grid for the selected voice shows where a click lands
+    if(on){cx.globalAlpha=.28;for(let i=0;i<16;i++){if(v==='acid'){for(let d=0;d<8;d++)dotAt(X(i)+sw*.3,acidY(d),1.3)}else if(!pat[v][i])dotAt(X(i)+sw*.3,v==='kick'||v==='bass'?bot:mid,1.6)}}
+    cx.globalAlpha=M[v]?.18:on?1:.6;cx.lineWidth=2;
+    for(let i=0;i<16;i++){
+      const s=pat[v][i];if(!s)continue;const x=X(i);
+      cx.beginPath();
+      if(v==='kick'||v==='bass'){
+        const tc=(v==='kick'?P.kick.decay/5:P.bass.decay/3)/sd;let len=v==='kick'?4:1.4;
+        for(let j=1;j<=4;j++)if(pat[v][(i+j)%16]){len=Math.min(len,j-.12);break}
+        len=Math.min(len,16-i);
+        for(let u=0;u<=len;u+=.03){const y=bot-(bot-top)*Math.exp(-u/tc);u?cx.lineTo(x+u*sw,y):cx.moveTo(x,y)}
+      }else if(v==='hat'||v==='open'){
+        const l=Math.min(Math.max(P[v].decay/sd,.18),v==='open'?2.5:.8);cx.moveTo(x,mid);cx.lineTo(Math.min(x+l*sw,X(16)),mid);
+      }else if(v==='clap'){
+        cx.moveTo(x,top);cx.lineTo(x+sw*.35,top);cx.lineTo(x+sw*.6,bot);cx.lineTo(x+sw*(.6+Math.min(P.clap.decay/sd,1)*.35),bot);
+      }else{
+        const y=acidY(s.d),nx=pat.acid[(i+1)%16];cx.lineWidth=s.a?4.2:2;
+        cx.moveTo(x,y);cx.lineTo(x+sw*.62,y);if(s.s&&nx&&i<15)cx.lineTo(x+sw,acidY(nx.d));else if(s.s)cx.lineTo(x+sw*.95,y);
+      }
+      cx.stroke();
+    }
+  }
+  // playhead
+  let pos=0;
+  if(playing&&ac){const now=ac.currentTime;while(queue.length>1&&queue[1].t<=now)queue.shift();
+    if(queue.length&&queue[0].t<=now)pos=queue[0].s+Math.min((now-queue[0].t)/sd,1)}
+  const px=X(pos);cx.globalAlpha=.18;cx.lineWidth=1;cx.beginPath();cx.moveTo(px,T);cx.lineTo(px,Y(1));cx.stroke();
+  cx.globalAlpha=1;cx.fillStyle=scene.dot;cx.beginPath();cx.arc(px,ax,8,0,7);cx.fill();
+  cx.strokeStyle=ink;cx.lineWidth=1;cx.stroke();
+}
+function dotAt(x,y,r){cx.beginPath();cx.arc(x,y,r,0,7);cx.fill()}
+
+cv.addEventListener('pointerdown',e=>{
+  const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
+  const i=Math.floor((x-L)/((W-L-R)/16));if(i<0||i>15)return;
+  const n=(y-T)/(H-T-B);let v=null,best=9;
+  for(const k in BAND){const [b0,b1]=BAND[k],d=n<b0?b0-n:n>b1?n-b1:0;if(d<best){best=d;v=k}}
+  if(v!==sel){select(v)}
+  if(v==='acid'){
+    const [b0,b1]=BAND.acid,d=Math.max(0,Math.min(7,Math.round((b1-n)/(b1-b0)*7))),s=pat.acid[i];
+    if(!s||s.d!==d)pat.acid[i]={d,a:false,s:false};
+    else if(!s.a&&!s.s)s.a=true;else if(s.a&&!s.s){s.a=false;s.s=true}else pat.acid[i]=null;
+  }else pat[v][i]=pat[v][i]?0:1;
+  if(ac&&!playing&&pat[v][i]){const t=ac.currentTime+.01;ac.resume();
+    ({kick,bass,clap,hat:t=>hat(t,P.hat,false),open:t=>hat(t,P.open,true),acid:t=>{acid(i,t,60/bpm/4);N.vca.gain.setTargetAtTime(0,t+.25,.012)}})[v](t)}
+});
+
+/* ---------- formula and controls ---------- */
+const fmt=v=>v>=100?Math.round(v):v>=10?v.toFixed(1):v.toFixed(2);
+const fr=(a,b)=>`<span class="fr"><span>${a}</span><span>${b}</span></span>`;
+const FORM={
+  kick:p=>`<i>y</i> = tanh(${fmt(p.drive)} sin 2π∫<i>f</i> d<i>t</i>) · <i>e</i><sup>−5<i>t</i>/${fmt(p.decay)}</sup> ,&emsp;<i>f</i> = ${fmt(p.pitch)}(1 + 5<i>e</i><sup>−<i>t</i>/0.016</sup>) ,&emsp;rumble = ${fmt(p.rumble)} · lp<sub>150</sub>(reverb(<i>y</i>))`,
+  bass:p=>`<i>y</i> = lp<sub>${fmt(p.cut)}</sub>(saw(${fmt(ROOT())}<i>t</i>)) · <i>e</i><sup>−3<i>t</i>/${fmt(p.decay)}</sup> · (1 − 0.85 kick)`,
+  clap:p=>`<i>y</i> = bp<sub>${fmt(p.tone)}</sub>(noise) · [ Σ<sub><i>k</i>=0..3</sub> (1 − (<i>t</i> − 0.011<i>k</i>)/0.009)<sub>+</sub> + 0.75<i>e</i><sup>−5(<i>t</i>−0.034)/${fmt(p.decay)}</sup> ]`,
+  hat:p=>`<i>y</i> = hp( bp<sub>${fmt(p.tone*.835)}</sub>(<i>m</i>) + ¼ bp<sub>3440</sub>(<i>m</i>) ) · <i>e</i><sup>−5<i>t</i>/${fmt(p.decay)}</sup> ,&emsp;<i>m</i> = Σ<sub><i>k</i>=1..6</sub> sq(<i>f<sub>k</sub>t</i>) ,&emsp;<i>f</i> = 205, 304, 370, 523, 540, 800`,
+  acid:p=>`<i>y</i> = lp<sup>4</sup><sub><i>c</i>(<i>t</i>)</sub>(saw(${fmt(ROOT()*2)} · 2<sup>${fr('<i>n</i>','12')}</sup><i>t</i>)) ,&emsp;<i>c</i>(<i>t</i>) = ${fmt(p.cut)} + ${fmt(p.env)}<i>e</i><sup>−3<i>t</i>/${fmt(p.decay)}</sup> ,&emsp;<i>Q</i> = ${fmt(p.res)}`
+};
+FORM.open=FORM.hat;
+const $=id=>document.getElementById(id);
+function formula(){$('formula').innerHTML=FORM[sel](P[sel])}
+function select(v){
+  sel=v;
+  for(const el of $('voices').children)el.setAttribute('aria-pressed',el.dataset.v===v);
+  $('mute').textContent=M[v]?'muted':'mute';$('mute').setAttribute('aria-pressed',M[v]);
+  $('knobs').innerHTML=DEF[v].map(d=>`<div class="k"><label for="k-${d[0]}">${d[1]}<output id="o-${d[0]}">${fmt(P[v][d[0]])} ${d[5]}</output></label><input id="k-${d[0]}" type="range" min="${d[2]}" max="${d[3]}" step="${(d[3]-d[2])/200}" value="${P[v][d[0]]}"></div>`).join('');
+  for(const d of DEF[v])$('k-'+d[0]).oninput=e=>{P[v][d[0]]=+e.target.value;$('o-'+d[0]).textContent=fmt(P[v][d[0]])+' '+d[5];formula();applyParams()};
+  formula();
+}
+function setScene(s){
+  scene=s;pat=s.pat;P=s.P;bpm=s.bpm;
+  const st=document.documentElement.style;st.setProperty('--bg',s.bg);st.setProperty('--ink',s.ink);st.setProperty('--dot',s.dot);
+  st.setProperty('--faint',s.ink+'99');
+  for(const el of $('scenes').children)el.setAttribute('aria-pressed',el.textContent===s.name);
+  $('bpm').value=bpm;$('bpmv').textContent=bpm+' bpm';
+  $('about').textContent=`${s.about} · ${NOTE[s.root%12]} ${s.mode} · swing ${s.swing}%`;
+  applyParams();select(sel);
+}
+const rnd=p=>Math.random()<p;
+function randomise(v){
+  const o=pat[v];
+  for(let i=0;i<16;i++){
+    if(v==='kick')o[i]=i%4===0?1:(i===14||i===11)&&rnd(.25)?1:0;
+    else if(v==='bass')o[i]=i%4===0?0:rnd(.75)?1:0;
+    else if(v==='clap')o[i]=i===4||i===12?1:rnd(.06)?1:0;
+    else if(v==='hat')o[i]=rnd(.6)?1:0;
+    else if(v==='open')o[i]=i%4===2?(rnd(.85)?1:0):rnd(.05)?1:0;
+    else o[i]=rnd(.65)?{d:[0,0,0,0,0,1,2,3,4,5,6,7][Math.random()*12|0],a:rnd(.3),s:rnd(.25)}:null;
+  }
+}
+
+$('scenes').innerHTML=SCENES.map(s=>`<button>${s.name}</button>`).join(' ');
+[...$('scenes').children].forEach((el,i)=>el.onclick=()=>setScene(SCENES[i]));
+$('voices').innerHTML=TABS.map(v=>`<button data-v="${v}">${v}</button>`).join(' ');
+for(const el of $('voices').children)el.onclick=()=>select(el.dataset.v);
+$('bpm').oninput=e=>{bpm=scene.bpm=+e.target.value;$('bpmv').textContent=bpm+' bpm';applyParams()};
+$('play').onclick=toggle;
+$('new').onclick=()=>randomise(sel);
+$('mute').onclick=()=>{M[sel]=!M[sel];if(sel==='acid'&&ac)N.vca.gain.setTargetAtTime(0,ac.currentTime,.01);select(sel)};
+addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();if(!e.repeat)toggle()}});
+addEventListener('keyup',e=>{if(e.code==='Space')e.preventDefault()});
+setScene(SCENES[0]);select('kick');draw();
+</script>
 </body>
 </html>

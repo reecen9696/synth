@@ -1,6 +1,6 @@
-# Techno Synth
+# Techno Function Synth
 
-A browser techno groovebox. Every sound is generated in code with the Web Audio API. There are no samples, no build step and no dependencies.
+Browser techno synth. Every sound is a formula, generated in code with the Web Audio API. No samples, no build step, no dependencies. One file: `index.html`.
 
 ## Run
 
@@ -10,62 +10,28 @@ Open `index.html` in a browser, or serve the folder:
 
 ## Use
 
-1. Pick a **Style** (Detroit, Berlin, minimal, dub, acid, hard, industrial, peak time, hypnotic, melodic, hardgroove, rave, deep/ambient, electro, schranz) and press **Make track**. You get 8 patterns (Intro, Groove, Main, Break, Build, Drop, Peak, Outro) and a song order.
-2. Press **Play** (or Space). **Loop pattern** repeats one bar. **Play song** runs the song order with build risers, breakdown filter dips and auto fills.
-3. The grid is one bar of 16 steps with one row per instrument. **Click does** sets what a click means:
-   - **Draw** turns steps on and off. Drag to paint a row.
-   - **Accent** makes a step louder and brighter.
-   - **Ratchet** splits a step into 2–4 fast hits.
-   - **Chance** makes a step play only some of the time.
-4. Click an instrument name to open its sound controls, mix controls and live formula. Melodic parts also get a note grid with accent and slide rows.
-5. The **steps** column sets a loop length per instrument. Lengths other than 16 make polymeters.
-6. **Presets** under each instrument give starting sounds. **Mutate** makes small variations and **Re-roll** makes a new part. Section effects in the song order: filter in/out, build (riser + gap), break, riser, drop gap.
-7. **MIDI** connects a keyboard or pad controller. **● Rec** records what you play while the sequencer runs. **Tap** sets tempo; **humanize** loosens timing.
-8. **Export WAV** renders the current pattern, or the whole song when you are in song mode. **Save**, **Open** and **Share** keep projects. Work is also autosaved in the browser.
+- Pick a scene at the top. Each one is a techno style with its own tempo, swing, key, sound and colours: 150, detroit, berlin, minimal, dub, acid, hard, industrial, hypnotic, electro, ambient.
+- Click the graph to add or remove hits. One bar, 16 steps.
+- Acid: click a note again for accent, again for slide, again to remove.
+- Pick a voice to see its formula and sliders.
+- Space plays and stops.
 
-## Instruments
+## Code map (all in index.html)
 
-| Drums | Synths |
-|---|---|
-| Kick (909/808 with rumble), Snare, Clap, Rim, Closed hat, Open hat (choked), Ride, Tom/conga, Cowbell, Shaker | Bass (sub, saw, square, reese, FM), Acid 303, Chord stab, Pad (JP-8000 supersaw), FM pluck, Hoover |
+- `DEF`: parameters and ranges per voice
+- `SCENES`: style, tempo, swing, root note, mode, colours, sound settings and pattern
+- `initAudio`: master bus, sidechain duck, delay, reverb, rumble chain, acid voice
+- `kick` `bass` `clap` `hat` `acid`: one function per voice
+- `tick`: lookahead scheduler (25 ms timer, 100 ms window on the audio clock) with swing
+- `draw`: canvas graph and playhead
+- `FORM`: formula text per voice
 
-## Code map
+## The maths
 
-| File | What lives there |
-|---|---|
-| `js/voices.js` | One object per instrument: parameters, help text, formula and `play()`. Add a voice here and add its colour in `css/style.css`. |
-| `js/engine.js` | The audio graph: channels, sidechain duck bus, ping-pong delay, generated reverb, rumble chain, master filter, drive, bit crush, limiter. |
-| `js/theory.js` | Scales, scale degree to MIDI, Euclidean rhythms, seeded random, drum-string parser, melodic line generators. |
-| `js/genres.js` | Style presets (tempo, swing, key, sounds, mix, drum strings, line styles), song sections, default state, `makeSong`. |
-| `js/seq.js` | Step playback shared by live and offline. Covers swing, ratchets, chance, fills, section fx, the look-ahead clock in a Worker, and the WAV renderer. |
-| `js/ui.js` | Everything on screen: grid, piano roll, panels, song order, files, undo, keys. |
-| `docs/RESEARCH.md` | The research behind the numbers: circuit analyses, genre tables, arrangement, Web Audio practice, 50 sources. |
+- Kick: `y = tanh(k·sin 2π∫f dt)·e^(−5t/d)`, with the pitch dropping fast from 6× to its base frequency.
+- Hats: six square waves at the TR-808 frequencies 205.3, 304.4, 369.6, 522.7, 540 and 800 Hz, bandpassed at the tone and at 3.44 kHz. A closed hat cuts off a ringing open hat.
+- Clap: four noise bursts 11 ms apart plus a tail, through a 1.1 kHz bandpass, as in the 909 circuit.
+- Acid: a saw through a 24 dB resonant lowpass, with `c(t) = cutoff + env·e^(−3t/d)`. Accents force a 0.2 s filter decay and stack. Slide is a 60 ms glide, as on a TB-303.
+- Notes: `f = 440·2^((n−69)/12)`. Swing delays every second 16th by `(swing − 50%)·2·step`.
 
-### Drum pattern strings
-
-Genres write drums as 16-character strings:
-
-- `X` = accent
-- `x` = hit
-- `.` = rest
-- `1` to `9` = a hit with 10% to 90% chance
-
-A shorter string repeats to fill 16 steps.
-
-### Working together
-
-Pull before you start and push small commits often. The code is split by concern so two people rarely touch the same file:
-
-- New sounds go in `voices.js`.
-- New styles go in `genres.js`.
-- Screen changes go in `ui.js`.
-
-## Maths references
-
-- TR-808 cymbal and hat oscillators (205.3, 304.4, 369.6, 522.7, 540, 800 Hz) and the dual bandpass at 3.44 and 7.1 kHz come from Werner, Abel and Smith, ICMC 2014.
-- 303 accent and slide behaviour comes from Robin Whittle's Devil Fish manual. Accented notes force a 200 ms filter decay, consecutive accents stack, and slide is 60 ms.
-- The supersaw detune curve and mix levels come from Adam Szabo's JP-8000 analysis.
-- FM ratios and index come from Chowning (1973).
-- The scheduler follows Chris Wilson's "A tale of two clocks".
-
-Full list in `docs/RESEARCH.md`.
+`docs/RESEARCH.md` has the research behind the numbers: circuit analyses, genre tables and 50 sources.
