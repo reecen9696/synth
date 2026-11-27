@@ -21,7 +21,9 @@ body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:17p
   display:flex;flex-direction:column;transition:background .4s,color .4s;overflow:auto}
 .wrap{flex:1;display:flex;flex-direction:column;gap:14px;width:100%;max-width:1180px;margin:0 auto;padding:18px 22px 22px;min-height:560px}
 header,.bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 22px}
-#scenes{display:flex;flex-wrap:wrap;gap:2px 16px}
+#scenes{display:flex;flex-wrap:wrap;gap:2px 14px;flex:1;min-width:0}
+header{flex-wrap:nowrap!important;gap:6px 18px!important}
+header .tempo{flex:none}
 .sp{flex:1}
 button{font:inherit;color:inherit;background:none;border:0;padding:4px 2px;cursor:pointer;opacity:.5}
 button:hover{opacity:.8}
@@ -31,7 +33,8 @@ button:focus-visible,input:focus-visible,canvas:focus-visible{outline:1.5px dash
 #play i{display:block;width:0;height:0;border-left:14px solid var(--bg);border-top:9px solid transparent;border-bottom:9px solid transparent;margin-left:4px}
 #play.on i{width:14px;height:14px;border:0;background:var(--bg);margin:0}
 .tempo{display:flex;align-items:center;gap:10px;font-variant-numeric:tabular-nums}
-.tempo input{width:120px}
+.tempo input{width:96px}
+.tempo span{white-space:nowrap;min-width:4.2em}
 main{flex:1;position:relative;min-height:260px;display:flex}
 #side{position:relative;width:92px;flex:none}
 #plot{position:relative;flex:1;min-width:0}
@@ -68,6 +71,10 @@ canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;touch-a
 #formula sup,#formula sub{font-size:.68em}
 .fr{display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:.8em;line-height:1.15;margin:0 2px}
 .fr span:first-child{border-bottom:1px solid currentColor;padding:0 3px}
+#presets{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;font-size:15px;min-height:1.6em}
+#presets span{font-style:italic;opacity:.6;margin-right:-4px}
+#presets .gap{width:18px}
+#rec.on{opacity:1;color:var(--dot)}
 #knobs{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 26px}
 .k label{display:flex;justify-content:space-between;font-style:italic;font-size:15px}
 .k output{font-style:normal;font-variant-numeric:tabular-nums;opacity:.7}
@@ -83,8 +90,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radiu
 <div class="wrap">
   <header>
     <div id="scenes" role="group" aria-label="Scene"></div>
-    <span class="sp"></span>
-    <div id="bars" role="group" aria-label="How many bars in the sequence"><span>bars</span></div>
+    <div class="tempo"><input id="swing" type="range" min="50" max="72" step="1" aria-label="Swing" style="width:56px"><span id="swingv"></span></div>
     <div class="tempo"><input id="bpm" type="range" min="110" max="160" step="1" aria-label="Tempo"><span id="bpmv"></span></div>
   </header>
   <section id="seq" aria-label="Sequence: which voices play in each of 16 bars"></section>
@@ -98,9 +104,12 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radiu
     <button id="play" aria-label="Play"><i></i></button>
     <div id="voices" role="group" aria-label="Voice"></div>
     <span class="sp"></span>
+    <div id="bars" role="group" aria-label="How many bars in the sequence"><span>bars</span></div>
     <button id="new">new pattern</button>
+    <button id="rec" title="record what you hear, press again to save the file">record</button>
   </div>
 
+  <div id="presets"></div>
   <div id="formula" aria-live="off"></div>
   <div id="knobs"></div>
   <p class="hint">Click to add a note, click it again to remove. Drag a note to move it, drag across steps to paint. Shift-click: accent. Alt-click: slide. The switches on the left show or hide a voice. Bars sets how long the sequence is; click it to choose which voices play in each bar. Space plays.</p>
@@ -194,7 +203,7 @@ function initAudio(){
   // master: compressor then soft clip, the usual techno bus glue
   const comp=ac.createDynamicsCompressor();comp.threshold.value=-12;comp.ratio.value=4;comp.attack.value=.005;comp.release.value=.12;
   const clip=ac.createWaveShaper();clip.curve=curve(1.5);
-  N.master=G(1);chain(N.master,comp,clip,G(.8),ac.destination);
+  N.master=G(1);N.out=G(.8);chain(N.master,comp,clip,N.out,ac.destination);
   // sidechain bus: everything low ducks when the kick hits
   N.duck=G(1);N.duck.connect(N.master);
   // noise source material
@@ -438,6 +447,37 @@ cv.addEventListener('pointerup',endDrag);
 cv.addEventListener('pointercancel',()=>{drag=null});
 cv.addEventListener('pointerleave',()=>{hover=null});
 
+/* ---------- presets ----------
+   SOUNDS change the selected voice's sliders. TUNES are acid lines written as
+   scale degree (0 = root … 7 = octave), a = accent, s = slide, - = rest. */
+const SOUNDS={
+  kick:{'909':{pitch:52,decay:.35,drive:2.5,rumble:0},'808 boom':{pitch:46,decay:1.1,drive:1.2,rumble:0},'rumble':{pitch:46,decay:.45,drive:4,rumble:.6},'hard':{pitch:52,decay:.3,drive:9,rumble:.3},'gabber':{pitch:58,decay:.5,drive:12,rumble:0},'tick':{pitch:60,decay:.15,drive:1.5,rumble:0}},
+  bass:{'tight':{cut:260,decay:.1},'warm':{cut:500,decay:.2},'sub':{cut:120,decay:.4},'long':{cut:300,decay:.7}},
+  clap:{'909':{tone:1100,decay:.22},'tight':{tone:1500,decay:.1},'big':{tone:950,decay:.5}},
+  hat:{'808':{tone:8500,decay:.045},'bright':{tone:11500,decay:.035},'dark':{tone:6000,decay:.06}},
+  open:{'short':{tone:9000,decay:.15},'808':{tone:8000,decay:.3},'long':{tone:9000,decay:.7}},
+  acid:{'classic':{cut:360,res:13,env:2400,decay:.22},'squelch':{cut:250,res:20,env:4000,decay:.35},'mellow':{cut:500,res:6,env:1200,decay:.3},'screaming':{cut:700,res:24,env:5000,decay:.45},'dark':{cut:150,res:16,env:1500,decay:.15}}
+};
+const TUNES={
+  classic:'0 - 0a 0 - 3s 4 - 0 0a - 7s 4 - 1a 0',
+  rolling:'0 0 7 0 0 0a 7 0 0 0 7s 5 0 0a 3 0',
+  squelch:'0a 0s 0 - 0a 0s 1 - 0a 0s 0 - 3a 3s 1 -',
+  hypnotic:'0a - 3 0 - 4 - 0a - 3 0 - 4 - 0a -',
+  rave:'0a 0 7 0 5s 3 0a 0 7 0 5s 3 1a 0 3 0',
+  chicago:'0 0a 0 0s 7 0 0a 3 0 0 0a 5s 3 0 1 0',
+  walking:'0 1 3 1 0 1a 3 4 3 1 0 1s 3 5 4a 3',
+  octaves:'0 7 0 7a 0 7 0 7s 0 7 0 7a 3 7 4 7s',
+  minimal:'- - 0 - - - - 4a - - 0 - - - - -'
+};
+function renderPresets(){
+  let h=`<span>sound</span>`+Object.keys(SOUNDS[sel]).map(k=>`<button data-s="${k}">${k}</button>`).join('');
+  if(sel==='acid')h+=`<i class="gap"></i><span>tune</span>`+Object.keys(TUNES).map(k=>`<button data-t="${k}">${k}</button>`).join('');
+  $('presets').innerHTML=h;
+  for(const el of $('presets').querySelectorAll('[data-s]'))el.onclick=()=>{Object.assign(P[sel],SOUNDS[sel][el.dataset.s]);select(sel);applyParams();preview(sel,pat[sel].findIndex(Boolean))};
+  for(const el of $('presets').querySelectorAll('[data-t]'))el.onclick=()=>{a(TUNES[el.dataset.t]).forEach((n,i)=>pat.acid[i]=n);
+    for(const b of $('presets').querySelectorAll('[data-t]'))b.setAttribute('aria-pressed',b===el)};
+}
+
 /* ---------- formula and controls ---------- */
 const fmt=v=>v>=100?Math.round(v):v>=10?v.toFixed(1):v.toFixed(2);
 const fr=(a,b)=>`<span class="fr"><span>${a}</span><span>${b}</span></span>`;
@@ -457,14 +497,14 @@ function select(v){
   for(const el of $('side').children)el.classList.toggle('sel',el.dataset.v===v);
   $('knobs').innerHTML=DEF[v].map(d=>`<div class="k"><label for="k-${d[0]}">${d[1]}<output id="o-${d[0]}">${fmt(P[v][d[0]])} ${d[5]}</output></label><input id="k-${d[0]}" type="range" min="${d[2]}" max="${d[3]}" step="${(d[3]-d[2])/200}" value="${P[v][d[0]]}"></div>`).join('');
   for(const d of DEF[v])$('k-'+d[0]).oninput=e=>{P[v][d[0]]=+e.target.value;$('o-'+d[0]).textContent=fmt(P[v][d[0]])+' '+d[5];formula();applyParams()};
-  formula();
+  formula();renderPresets();
 }
 function setScene(s){
   scene=s;pat=s.pat;P=s.P;bpm=s.bpm;
   const st=document.documentElement.style;st.setProperty('--bg',s.bg);st.setProperty('--ink',s.ink);st.setProperty('--dot',s.dot);
   st.setProperty('--faint',s.ink+'99');
   for(const el of $('scenes').children)el.setAttribute('aria-pressed',el.textContent===s.name);
-  $('bpm').value=bpm;$('bpmv').textContent=bpm+' bpm';
+  $('bpm').value=bpm;$('bpmv').textContent=bpm+' bpm';$('swing').value=s.swing;$('swingv').textContent='swing '+s.swing+'%';
   applyParams();select(sel);renderSeq();
 }
 const rnd=p=>Math.random()<p;
@@ -486,6 +526,38 @@ $('voices').innerHTML=TABS.map(v=>`<button data-v="${v}">${v}</button>`).join(' 
 for(const el of $('voices').children)el.onclick=()=>select(el.dataset.v);
 $('bpm').oninput=e=>{bpm=scene.bpm=+e.target.value;$('bpmv').textContent=bpm+' bpm';applyParams()};
 $('play').onclick=toggle;
+$('swing').oninput=e=>{scene.swing=+e.target.value;$('swingv').textContent='swing '+scene.swing+'%'};
+
+/* record: capture the master output, download when stopped */
+let rec=null;
+$('rec').onclick=()=>{
+  initAudio();
+  if(rec){rec.stop();return}
+  const dest=ac.createMediaStreamDestination();N.out.connect(dest);
+  const chunks=[],r=new MediaRecorder(dest.stream);
+  r.ondataavailable=e=>chunks.push(e.data);
+  r.onstop=()=>{N.out.disconnect(dest);const type=r.mimeType||'audio/webm',ext=type.includes('ogg')?'ogg':type.includes('mp4')?'m4a':'webm';
+    const url=URL.createObjectURL(new Blob(chunks,{type})),el=document.createElement('a');el.href=url;el.download=`techno-${scene.name}-${bpm}bpm.${ext}`;el.click();
+    setTimeout(()=>URL.revokeObjectURL(url),5000);rec=null;$('rec').textContent='record';$('rec').classList.remove('on')};
+  r.start();rec=r;$('rec').textContent='● stop & save';$('rec').classList.add('on');
+  if(!playing)toggle();
+};
+
+/* autosave: patterns, sounds, sequence and switches stay after a reload */
+const KEY='techno-function-synth';
+function save(){try{localStorage.setItem(KEY,JSON.stringify({v:1,scene:SCENES.indexOf(scene),nBars,ON,sel,scenes:SCENES.map(s=>({pat:s.pat,P:s.P,arr:s.arr,bpm:s.bpm,swing:s.swing}))}))}catch(e){}}
+function load(){
+  try{
+    const d=JSON.parse(localStorage.getItem(KEY));if(!d||d.v!==1)return 0;
+    nBars=d.nBars||4;Object.assign(ON,d.ON);if(DEF[d.sel])sel=d.sel;
+    d.scenes.forEach((x,i)=>{const s=SCENES[i];if(!s||!x)return;
+      for(const v of TABS){if(x.pat&&Array.isArray(x.pat[v])&&x.pat[v].length===16)s.pat[v]=x.pat[v];if(x.P&&x.P[v])Object.assign(s.P[v],x.P[v]);if(x.arr&&x.arr[v]&&x.arr[v].length===nBars)s.arr[v]=x.arr[v];else arrange(s)}
+      s.bpm=x.bpm||s.bpm;s.swing=x.swing||s.swing});
+    for(const el of $('side').children)el.setAttribute('aria-pressed',ON[el.dataset.v]);
+    return d.scene||0;
+  }catch(e){return 0}
+}
+setInterval(save,1500);addEventListener('pagehide',save);
 $('new').onclick=()=>randomise(sel);
 
 /* ---------- switches and sequence ---------- */
@@ -512,7 +584,7 @@ $('seq').addEventListener('click',e=>{
 });
 addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();if(!e.repeat)toggle()}});
 addEventListener('keyup',e=>{if(e.code==='Space')e.preventDefault()});
-setScene(SCENES[0]);select('kick');draw();
+{const i=load();const v=sel;setScene(SCENES[i]);select(v)}draw();
 </script>
 </body>
 </html>
