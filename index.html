@@ -325,7 +325,7 @@ function bass(t){
 }
 function clap(t){
   // four hands about 11 ms apart, then the tail, through a 1.1 kHz bandpass (909 circuit)
-  const p=P.clap,s=noiseSrc(t,p.decay+.3),g=G(0),lv=G(p.level);
+  const p=P.clap,s=noiseSrc(t,p.decay+.3),g=G(0),lv=G(p.level*2.6);   // the bandpass throws most of the noise away, so boost what is left
   g.gain.setValueAtTime(0,t);
   for(let k=0;k<4;k++){g.gain.setValueAtTime(k<3?1:.8,t+k*.011);g.gain.linearRampToValueAtTime(.05,t+k*.011+.009)}
   g.gain.setValueAtTime(.75,t+.034);g.gain.setTargetAtTime(0,t+.034,p.decay/5);
