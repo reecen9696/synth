@@ -15,6 +15,7 @@ Open `index.html` in a browser, or serve the folder:
 - Keyboard: `a s d f g h j k` are the 8 scale notes. Hold several for a chord. ← → move the step (the caret under the acid row), Backspace clears it.
 - Synth: the acid row can be a 303, pluck, dub chord, rave stab, supersaw, hoover, reese, organ or FM bell. Dub chord and rave stab play a whole chord from one note. On held synths (supersaw, hoover, reese, organ) a slide ties the note into the next step.
 - Pick a voice to see its formula and sliders.
+- Track: an audio file that plays behind the song. Press load… (or drop a file on the page), drag the two markers on the waveform to crop it, and it starts when you press play. Filter is one knob: left is a lowpass, right is a highpass. Match beat changes the track's speed to the song's tempo if it has a steady beat, otherwise it nudges the speed so the crop lasts a whole number of bars. A file at `tracks/default.mp3` loads on start; that folder is not in the repo.
 - Space plays and stops.
 
 ## Code map (all in index.html)

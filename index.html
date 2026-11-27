@@ -86,6 +86,17 @@ select option{font-style:normal;color:#111;background:#fff}
 [hidden]{display:none!important}
 #presets .br{flex-basis:100%;height:0}
 #rec.on{opacity:1;color:var(--dot)}
+#track{display:flex;flex-direction:column;gap:4px}
+.trow{display:flex;align-items:center;gap:6px 20px;flex-wrap:wrap;font-size:15px}
+.trow .k{width:130px}
+.tgl{display:flex;align-items:center;gap:9px;opacity:1;font-style:italic;text-decoration:none!important}
+.tgl .nm{opacity:.4}.tgl[aria-pressed="true"] .nm{opacity:1}
+.tgl[aria-pressed="true"] .sw{background:var(--ink)}
+.tgl[aria-pressed="true"] .sw i{transform:translateX(13px);background:var(--bg)}
+#t-name{font-style:italic;opacity:.7;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#tw{position:static;width:100%;height:56px;cursor:ew-resize;touch-action:none}
+#t-info{font-size:13px;opacity:.65;font-variant-numeric:tabular-nums;min-height:1.2em}
+#track.empty #tw,#track.empty #t-info,#track.empty .k,#track.empty #t-match,#track.empty #t-clear{display:none}
 #knobs{padding-left:92px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 26px}
 .k label{display:flex;justify-content:space-between;font-style:italic;font-size:15px}
 .k output{font-style:normal;font-variant-numeric:tabular-nums;opacity:.7}
@@ -126,6 +137,20 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radiu
     <button id="reset" title="forget your changes and load the default patterns and sounds">reset</button>
   </div>
 
+  <section id="track" aria-label="Background track">
+    <div class="trow">
+      <button class="tgl" id="t-on" aria-pressed="true" title="play the track with the song"><span class="nm">track</span><span class="sw"><i></i></span></button>
+      <span id="t-name">none</span>
+      <div class="k"><label for="t-filter">filter<output id="t-filterv"></output></label><input id="t-filter" type="range" min="-1" max="1" step=".01"></div>
+      <div class="k"><label for="t-level">level<output id="t-levelv"></output></label><input id="t-level" type="range" min="0" max="1" step=".01"></div>
+      <button id="t-match" aria-pressed="true" title="change the track's speed so it lines up with the bars">match beat</button>
+      <button id="t-load">load…</button>
+      <button id="t-clear" title="remove the track">remove</button>
+      <input id="t-file" type="file" accept="audio/*" hidden>
+    </div>
+    <canvas id="tw" aria-label="Track waveform. Drag the two markers to crop."></canvas>
+    <div id="t-info"></div>
+  </section>
   <div id="formula" aria-live="off"></div>
 </div>
 
@@ -255,6 +280,8 @@ function initAudio(){
   N.f1=F('lowpass',400,11);N.f2=F('lowpass',400,.7);N.vca=G(0);N.aLv=G(.5);N.acc=0;
   chain(N.ao,G(.6),N.f1,N.f2,F('highpass',40,.7),as,N.vca,N.aLv,N.duck);const ad=G(.35);N.aLv.connect(ad);ad.connect(N.dSend);
   N.ao.start();
+  // background track: lowpass and highpass (one filter knob), level, ducked by the kick like everything else
+  N.tLp=F('lowpass',20000,.7);N.tHp=F('highpass',20,.7);N.tLv=G(.6);chain(N.tLp,N.tHp,N.tLv,N.duck);
   // chorus for hoover and supersaw: two short delays, wobbling slowly, left and right
   N.cho=G(1);
   for(const [d,r,pan] of [[.012,.6,-.8],[.019,.83,.8]]){
@@ -271,6 +298,7 @@ function applyParams(){
   N.rOut.gain.value=P.kick.rumble*2;
   N.f1.Q.value=P.acid.res;N.aLv.gain.value=P.acid.level*.7;
   N.dly.delayTime.value=60/bpm*.75;
+  trackParams();
 }
 function noiseSrc(t,dur){const s=ac.createBufferSource();s.buffer=N.noise;s.loop=true;s.start(t,Math.random());s.stop(t+dur);return s}
 
@@ -398,9 +426,53 @@ function fire(i,t,bar){
 /* ---------- clock: schedule 100 ms ahead on the audio clock, poll every 25 ms ----------
    swing pushes every second 16th late by (swing − 50%) · 2 · one step */
 let playing=false,step=0,bar=0,nextBar=null,nextT=0,timer,queue=[];
+/* ---------- background track ----------
+   An audio file that plays with the song. Crop it with the two markers on the waveform.
+   match beat: if the track has a steady beat, speed = song bpm / track bpm.
+   Otherwise the speed is nudged (at most ~15%) so the crop lasts a whole number of bars.
+   filter knob x: left of centre lowpass 20000·(1/100)^(−x) Hz, right of centre highpass 20·200^x Hz. */
+const TR={on:true,a:0,b:0,filter:0,level:.6,match:true,buf:null,name:'',peaks:null,bpm:0,src:null,t0:0,rate:1,bar:0};
+function trackPlan(){
+  const len=TR.b-TR.a,barLen=240/bpm;let rate=1,n=Math.max(1,Math.ceil(len/barLen-.01));
+  if(TR.match){
+    if(TR.bpm){rate=bpm/TR.bpm;while(rate>1.42)rate/=2;while(rate<.71)rate*=2;n=Math.max(1,Math.round(len/rate/barLen))}
+    else{const k=Math.max(1,Math.round(len/barLen)),r=len/(k*barLen);if(r>.85&&r<1.18){rate=r;n=k}}
+  }
+  return {rate,n};
+}
+function trackFire(t){
+  if(!TR.buf||!TR.on||TR.b-TR.a<.05){TR.bar++;return}
+  const {rate,n}=trackPlan();
+  if(TR.bar++%n)return;
+  if(TR.src)try{TR.src.stop(t)}catch(e){}
+  const s=ac.createBufferSource();s.buffer=TR.buf;s.playbackRate.value=rate;s.connect(N.tLp);s.start(t,TR.a,TR.b-TR.a);
+  TR.src=s;TR.t0=t;TR.rate=rate;
+}
+function trackStop(){if(TR.src)try{TR.src.stop()}catch(e){}TR.src=null}
+function trackParams(){
+  if(!ac)return;const x=TR.filter,now=ac.currentTime;
+  N.tLp.frequency.setTargetAtTime(x<0?20000*Math.pow(.01,-x):20000,now,.02);
+  N.tHp.frequency.setTargetAtTime(x>0?20*Math.pow(200,x):20,now,.02);
+  N.tLv.gain.setTargetAtTime(TR.level,now,.02);
+}
+/* tempo of a clip: loudness jumps every ~12 ms, then find the gap between jumps that repeats most (70–180 bpm).
+   Returns 0 when nothing repeats clearly, e.g. speech. */
+function detectBpm(buf,a,b){
+  const sr=buf.sampleRate,d=buf.getChannelData(0),hop=512,i0=a*sr|0,i1=Math.min(b,a+60)*sr|0,n=(i1-i0)/hop|0;if(n<400)return 0;
+  const e=new Float32Array(n);for(let k=0;k<n;k++){let x=0;for(let j=0;j<hop;j++){const v=d[i0+k*hop+j];x+=v*v}e[k]=Math.log(1e-6+x)}
+  const fl=new Float32Array(n);let m=0;for(let k=1;k<n;k++){fl[k]=Math.max(0,e[k]-e[k-1]);m+=fl[k]}m/=n;for(let k=0;k<n;k++)fl[k]-=m;
+  const fr=sr/hop,ac0=(lag)=>{let x=0;for(let k=lag;k<n;k++)x+=fl[k]*fl[k-lag];return x/(n-lag)},z=ac0(0);
+  let best=0,bl=0;for(let lag=Math.floor(fr*60/180);lag<=Math.ceil(fr*60/70);lag++){const v=ac0(lag)+.5*ac0(lag*2);if(v>best){best=v;bl=lag}}
+  TR.conf=best/z;if(!bl||TR.conf<BEAT_CONF)return 0;
+  // refine between neighbouring lags
+  const y0=ac0(bl-1),y1=ac0(bl),y2=ac0(bl+1),off=(y0-y2)/(2*(y0-2*y1+y2)||1);
+  return Math.round(60*fr/(bl+off)*10)/10;
+}
+const BEAT_CONF=.3;
 function tick(){
   const sd=60/bpm/4;
   while(nextT<ac.currentTime+.1){
+    if(step===0)trackFire(nextT);
     const sw=step%2?(scene.swing/100-.5)*2*sd:0;fire(step,nextT+sw,bar);queue.push({s:step,b:bar,t:nextT});nextT+=sd;
     if(++step===16){step=0;bar=nextBar!=null?nextBar:(bar+1)%nBars;nextBar=null}
   }
@@ -408,8 +480,8 @@ function tick(){
 }
 function toggle(){
   initAudio();
-  if(playing){clearTimeout(timer);playing=false;queue=[];N.vca.gain.cancelScheduledValues(0);N.vca.gain.setTargetAtTime(0,ac.currentTime,.01)}
-  else{ac.resume();step=0;bar=nextBar!=null?nextBar:0;nextBar=null;nextT=ac.currentTime+.06;playing=true;tick()}
+  if(playing){clearTimeout(timer);playing=false;queue=[];trackStop();N.vca.gain.cancelScheduledValues(0);N.vca.gain.setTargetAtTime(0,ac.currentTime,.01)}
+  else{ac.resume();TR.bar=0;step=0;bar=nextBar!=null?nextBar:0;nextBar=null;nextT=ac.currentTime+.06;playing=true;tick()}
   const pb=document.getElementById('play');pb.classList.toggle('on',playing);pb.setAttribute('aria-label',playing?'Stop':'Play');
 }
 
@@ -657,7 +729,7 @@ $('scenes').innerHTML=SCENES.map(s=>`<button>${s.name}</button>`).join(' ');
 [...$('scenes').children].forEach((el,i)=>el.onclick=()=>setScene(SCENES[i]));
 $('voices').innerHTML=TABS.map(v=>`<button data-v="${v}">${v}</button>`).join(' ');
 for(const el of $('voices').children)el.onclick=()=>select(el.dataset.v);
-$('bpm').oninput=e=>{bpm=scene.bpm=+e.target.value;$('bpmv').textContent=bpm+' bpm';$('menuBtn').textContent=scene.name+' · '+bpm+' bpm';applyParams()};
+$('bpm').oninput=e=>{bpm=scene.bpm=+e.target.value;$('bpmv').textContent=bpm+' bpm';$('menuBtn').textContent=scene.name+' · '+bpm+' bpm';trackUI();applyParams()};
 $('play').onclick=toggle;
 const menu=open=>{$('menu').hidden=!open;$('menuBtn').setAttribute('aria-expanded',open)};
 $('menuBtn').onclick=()=>menu($('menu').hidden);
@@ -726,6 +798,66 @@ addEventListener('keydown',e=>{
 addEventListener('keyup',e=>{const d=KEYS.indexOf(e.key.toLowerCase());if(d>=0)held.delete(d)});
 addEventListener('blur',()=>held.clear());
 addEventListener('keyup',e=>{if(e.code==='Space')e.preventDefault()});
+/* ---------- track UI ---------- */
+const tw=$('tw'),tx=tw.getContext('2d'),TKEY='techno-track';
+const mmss=t=>Math.floor(t/60)+':'+(t%60).toFixed(1).padStart(4,'0');
+function trackSave(){try{localStorage.setItem(TKEY,JSON.stringify({name:TR.name,a:TR.a,b:TR.b,filter:TR.filter,level:TR.level,match:TR.match,on:TR.on}))}catch(e){}}
+function trackUI(){
+  $('track').classList.toggle('empty',!TR.buf);
+  $('t-on').setAttribute('aria-pressed',TR.on);$('t-match').setAttribute('aria-pressed',TR.match);
+  $('t-name').textContent=TR.buf?TR.name:'none';
+  $('t-filter').value=TR.filter;$('t-level').value=TR.level;
+  const x=TR.filter;$('t-filterv').textContent=Math.abs(x)<.02?'off':x<0?'low '+Math.round(20000*Math.pow(.01,-x))+' Hz':'high '+Math.round(20*Math.pow(200,x))+' Hz';
+  $('t-levelv').textContent=TR.level.toFixed(2);
+  if(TR.buf){const {rate,n}=trackPlan();
+    $('t-info').textContent=`${mmss(TR.a)} – ${mmss(TR.b)} · loops every ${n} bar${n>1?'s':''} · speed ×${rate.toFixed(2)} · `+(TR.bpm?`beat found at ${TR.bpm} bpm`:'no steady beat found'+(TR.match&&rate!==1?', fitted to the bars':''))}
+}
+function trackDraw(){
+  if(!TR.buf)return;const r=tw.getBoundingClientRect(),d=devicePixelRatio||1,w=r.width,h=r.height;
+  if(tw.width!==Math.round(w*d)){tw.width=Math.round(w*d);tw.height=Math.round(h*d)}
+  tx.setTransform(d,0,0,d,0,0);tx.clearRect(0,0,w,h);tx.strokeStyle=tx.fillStyle=scene.ink;
+  const dur=TR.buf.duration,xa=TR.a/dur*w,xb=TR.b/dur*w,P2=TR.peaks,np=P2.length;
+  tx.lineWidth=1;
+  for(let i=0;i<np;i++){const x=i/np*w,y=Math.max(.5,P2[i]*h*.48);tx.globalAlpha=x>=xa&&x<=xb?(TR.on?.9:.4):.2;tx.beginPath();tx.moveTo(x,h/2-y);tx.lineTo(x,h/2+y);tx.stroke()}
+  tx.globalAlpha=1;tx.lineWidth=2;for(const x of [xa,xb]){tx.beginPath();tx.moveTo(x,0);tx.lineTo(x,h);tx.stroke()}
+  tx.beginPath();tx.moveTo(xa,0);tx.lineTo(xa+7,0);tx.lineTo(xa,9);tx.fill();tx.beginPath();tx.moveTo(xb,0);tx.lineTo(xb-7,0);tx.lineTo(xb,9);tx.fill();
+  if(playing&&TR.src&&ac){const p=TR.a+(ac.currentTime-TR.t0)*TR.rate;if(p>=TR.a&&p<=TR.b){tx.fillStyle=scene.dot;tx.beginPath();tx.arc(p/dur*w,h/2,5,0,7);tx.fill();tx.stroke()}}
+}
+(function loop(){requestAnimationFrame(loop);trackDraw()})();
+async function trackLoad(data,name,keep){
+  try{
+    const buf=await new OfflineAudioContext(2,1,44100).decodeAudioData(data.slice(0));
+    const d=buf.getChannelData(0),np=900,pk=new Float32Array(np),sz=Math.floor(d.length/np);let mx=0;
+    for(let i=0;i<np;i++){let m=0;for(let j=0;j<sz;j+=8){const v=Math.abs(d[i*sz+j]);if(v>m)m=v}pk[i]=m;if(m>mx)mx=m}
+    for(let i=0;i<np;i++)pk[i]/=mx||1;
+    trackStop();Object.assign(TR,{buf,name,peaks:pk,a:0,b:buf.duration,bar:0});
+    let st=null;try{st=JSON.parse(localStorage.getItem(TKEY))}catch(e){}
+    if(st&&st.name===name){Object.assign(TR,{a:Math.min(st.a,buf.duration),b:Math.min(st.b,buf.duration),filter:st.filter,level:st.level,match:st.match,on:st.on})}
+    TR.bpm=detectBpm(buf,TR.a,TR.b);trackParams();trackUI();trackSave();
+    if(keep)idb('put',{data,name});
+  }catch(e){$('t-name').textContent='could not read that file'}
+}
+// the chosen file is kept in the browser (IndexedDB) so it is still there after a reload
+function idb(op,val){return new Promise(res=>{const rq=indexedDB.open('techno-track',1);rq.onupgradeneeded=()=>rq.result.createObjectStore('f');
+  rq.onerror=()=>res(null);rq.onsuccess=()=>{const st=rq.result.transaction('f','readwrite').objectStore('f'),r=op==='get'?st.get('t'):op==='put'?st.put(val,'t'):st.delete('t');r.onsuccess=()=>res(r.result);r.onerror=()=>res(null)}})}
+$('t-load').onclick=()=>$('t-file').click();
+$('t-file').onchange=async e=>{const f=e.target.files[0];if(f)trackLoad(await f.arrayBuffer(),f.name.replace(/\.[^.]+$/,''),true);e.target.value=''};
+$('t-clear').onclick=()=>{trackStop();TR.buf=null;idb('del');localStorage.setItem(TKEY,JSON.stringify({removed:1}));trackUI()};
+$('t-on').onclick=()=>{TR.on=!TR.on;if(!TR.on)trackStop();else TR.bar=0;trackUI();trackSave()};
+$('t-match').onclick=()=>{TR.match=!TR.match;TR.bar=0;trackUI();trackSave()};
+$('t-filter').oninput=e=>{TR.filter=+e.target.value;trackParams();trackUI();trackSave()};
+$('t-level').oninput=e=>{TR.level=+e.target.value;trackParams();trackUI();trackSave()};
+addEventListener('dragover',e=>e.preventDefault());
+addEventListener('drop',async e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f&&f.type.startsWith('audio'))trackLoad(await f.arrayBuffer(),f.name.replace(/\.[^.]+$/,''),true)});
+{let h=null;const at=e=>{const r=tw.getBoundingClientRect();return Math.max(0,Math.min(1,(e.clientX-r.left)/r.width))*TR.buf.duration};
+  tw.addEventListener('pointerdown',e=>{if(!TR.buf)return;const t=at(e);h=Math.abs(t-TR.a)<Math.abs(t-TR.b)?'a':'b';tw.setPointerCapture(e.pointerId);tw.dispatchEvent(new PointerEvent('pointermove',e))});
+  tw.addEventListener('pointermove',e=>{if(!h)return;const t=at(e);if(h==='a')TR.a=Math.min(t,TR.b-.1);else TR.b=Math.max(t,TR.a+.1);trackUI()});
+  tw.addEventListener('pointerup',()=>{if(!h)return;h=null;TR.bpm=detectBpm(TR.buf,TR.a,TR.b);TR.bar=0;trackUI();trackSave()})}
+// start-up: the file you chose last time, else tracks/default.mp3 if the folder has one
+(async()=>{trackUI();let st=null;try{st=JSON.parse(localStorage.getItem(TKEY))}catch(e){}
+  const k=await idb('get');if(k&&k.data)return trackLoad(k.data,k.name);
+  if(st&&st.removed)return;
+  try{const r=await fetch('tracks/default.mp3');if(r.ok)trackLoad(await r.arrayBuffer(),'default track')}catch(e){}})();
 {const i=load();const v=sel;setScene(SCENES[i]);select(v)}draw();
 </script>
 </body>
