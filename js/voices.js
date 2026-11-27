@@ -433,3 +433,83 @@ TS.riser = function (E, t, dur) {
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.35, t + dur * 0.97); g.gain.linearRampToValueAtTime(0, t + dur);
   E.chain(n, bp, g, E.sum); const s = E.G(0.5); g.connect(s); s.connect(E.rIn);
 };
+
+/* Named starting points per instrument. Loading one keeps octave settings. */
+TS.PRESETS = {
+  kick: {
+    '909': { tune: 52, punch: 5, sweep: 0.025, decay: 0.35, drive: 2.5, click: 0.4, rumble: 0 },
+    '808 boom': { tune: 47, punch: 2.2, sweep: 0.09, decay: 1.2, drive: 1.2, click: 0.05, rumble: 0 },
+    'Berlin rumble': { tune: 46, punch: 6, sweep: 0.028, decay: 0.45, drive: 4, click: 0.25, rumble: 0.6 },
+    'hard': { tune: 52, punch: 8, sweep: 0.02, decay: 0.3, drive: 9, click: 0.5, rumble: 0.3 },
+    'gabber': { tune: 58, punch: 10, sweep: 0.015, decay: 0.5, drive: 12, click: 0.6, rumble: 0 },
+    'minimal tick': { tune: 58, punch: 4, sweep: 0.012, decay: 0.18, drive: 1.5, click: 0.6, rumble: 0 }
+  },
+  snare: {
+    '909': { tone: 185, snappy: 0.65, decay: 0.2, body: 0.1 },
+    '808': { tone: 238, snappy: 0.45, decay: 0.15, body: 0.12 },
+    'tight': { tone: 220, snappy: 0.8, decay: 0.09, body: 0.05 },
+    'industrial': { tone: 150, snappy: 1, decay: 0.4, body: 0.15 }
+  },
+  clap: {
+    '909': { tone: 1100, spread: 0.011, decay: 0.22, snap: 0.3 },
+    'tight': { tone: 1500, spread: 0.007, decay: 0.1, snap: 0.5 },
+    'big room': { tone: 1000, spread: 0.014, decay: 0.5, snap: 0.2 }
+  },
+  chat: {
+    '808': { tone: 8500, decay: 0.045, pitch: 1, noise: 0.35 },
+    '909 bright': { tone: 11000, decay: 0.04, pitch: 1.3, noise: 0.6 },
+    'dark tick': { tone: 6000, decay: 0.025, pitch: 0.8, noise: 0.2 },
+    'hiss': { tone: 7000, decay: 0.06, pitch: 1, noise: 0.9 }
+  },
+  ohat: {
+    '808': { tone: 8000, decay: 0.3, pitch: 1, noise: 0.3 },
+    'long': { tone: 9000, decay: 0.8, pitch: 1.1, noise: 0.4 },
+    'short': { tone: 9000, decay: 0.15, pitch: 1, noise: 0.5 }
+  },
+  ride: {
+    'classic': { tone: 5500, decay: 0.9, pitch: 1.5, bell: 0.35 },
+    'washy': { tone: 4000, decay: 2, pitch: 1.2, bell: 0.1 },
+    'ping': { tone: 7000, decay: 0.6, pitch: 2, bell: 0.8 }
+  },
+  tom: {
+    'low tom': { tune: 90, bend: 1.5, decay: 0.2, noise: 0.15 },
+    'mid tom': { tune: 140, bend: 1.4, decay: 0.15, noise: 0.15 },
+    'low conga': { tune: 190, bend: 1.2, decay: 0.18, noise: 0.08 },
+    'high conga': { tune: 410, bend: 1.15, decay: 0.15, noise: 0.05 }
+  },
+  bass: {
+    'sub': { wave: 0, cut: 3000, res: 0.7, env: 0, decay: 0.35, sub: 0 },
+    'rolling saw': { wave: 1, cut: 260, res: 3, env: 700, decay: 0.12, sub: 0.3 },
+    'reese': { wave: 3, cut: 450, res: 2, env: 400, decay: 0.4, detune: 25, sub: 0.4 },
+    'FM growl': { wave: 4, cut: 900, res: 2, env: 1200, decay: 0.15, sub: 0.2 },
+    '808 long': { wave: 0, cut: 3000, res: 0.7, env: 0, decay: 0.9, sub: 0 }
+  },
+  acid: {
+    'classic': { wave: 0, cut: 360, res: 13, env: 2400, decay: 0.22, accent: 0.6, dist: 2.5 },
+    'squelch': { wave: 0, cut: 250, res: 20, env: 4000, decay: 0.35, accent: 0.8, dist: 4 },
+    'hollow square': { wave: 1, cut: 500, res: 10, env: 1800, decay: 0.18, accent: 0.6, dist: 2 },
+    'screaming': { wave: 0, cut: 600, res: 24, env: 5500, decay: 0.4, accent: 1, dist: 8 }
+  },
+  stab: {
+    'dub chord': { chord: 4, cut: 700, res: 3, env: 900, decay: 0.3, detune: 6 },
+    'Detroit minor 9': { chord: 2, cut: 2400, res: 2, env: 2500, decay: 0.3, detune: 9 },
+    'rave power': { chord: 7, cut: 3500, res: 2, env: 3000, decay: 0.2, detune: 18 },
+    'dark dim': { chord: 10, cut: 1200, res: 6, env: 1500, decay: 0.25, detune: 10 }
+  },
+  pad: {
+    'strings': { chord: 2, cut: 3000, attack: 0.4, release: 1.2, spread: 0.45, mix: 0.6 },
+    'dark drone': { chord: 0, cut: 900, attack: 1.5, release: 2, spread: 0.25, mix: 0.5 },
+    'huge': { chord: 3, cut: 6000, attack: 0.8, release: 3, spread: 0.8, mix: 0.9 }
+  },
+  pluck: {
+    'Chowning bell': { ratio: 1.4, index: 10, decay: 0.9, bright: 0.6 },
+    'bleep': { ratio: 1, index: 1.5, decay: 0.12, bright: 0.4 },
+    'metal': { ratio: 3.5, index: 8, decay: 0.3, bright: 0.3 },
+    'wood': { ratio: 2, index: 3, decay: 0.08, bright: 0.3 }
+  },
+  hoover: {
+    'classic': { bend: 12, glide: 0.18, decay: 0.5, detune: 22, cut: 4000 },
+    'dive': { bend: 24, glide: 0.35, decay: 0.8, detune: 30, cut: 6000 },
+    'stab': { bend: 5, glide: 0.05, decay: 0.2, detune: 18, cut: 3000 }
+  }
+};

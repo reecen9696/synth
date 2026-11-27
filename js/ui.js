@@ -124,6 +124,19 @@ var TS = window.TS = window.TS || {};
   $('copy').onclick = () => { clip = JSON.stringify(S.pats[S.cur]); toast(`Copied ${LETTERS[S.cur]}`); };
   $('paste').onclick = () => { if (!clip) return toast('Copy a pattern first'); snap(); S.pats[S.cur] = JSON.parse(clip); renderPats(); renderGrid(); renderTrack(); changed(false); };
   $('clear').onclick = () => { snap(); const n = S.pats[S.cur].name; S.pats[S.cur] = TS.emptyPattern(); S.pats[S.cur].name = n; renderPats(); renderGrid(); renderTrack(); changed(false); };
+  $('mutate').onclick = () => {
+    snap(); const L = TS.scale(S).length;
+    for (const id of TS.ORDER) if (S.pats[S.cur][id].some(Boolean)) TS.mutate(S.pats[S.cur], id, L);
+    renderPats(); renderGrid(); renderTrack(); changed(false); toast('Mutated ' + LETTERS[S.cur]);
+  };
+  let taps = [];
+  $('tap').onclick = () => {
+    const now = performance.now(); taps = taps.filter(x => now - x < 2500); taps.push(now);
+    if (taps.length >= 3) {
+      const iv = (taps[taps.length - 1] - taps[0]) / (taps.length - 1), bpm = Math.round(60000 / iv);
+      if (bpm >= 60 && bpm <= 200) { S.bpm = bpm; renderHeader(); changed(); }
+    }
+  };
   $('vary').onclick = () => {
     snap(); const name = S.pats[S.cur].name, sec = TS.SECTIONS.find(x => x.name === name) || TS.SECTIONS[5];
     S.pats[S.cur] = TS.makePattern(S.genre, sec, Math.random); renderPats(); renderGrid(); renderTrack(); changed(false);
@@ -143,7 +156,7 @@ var TS = window.TS = window.TS || {};
           h('button', { title: 'more bars', onclick: () => { snap(); en.r = Math.min(64, en.r + (en.r >= 4 ? 4 : 1)); renderSong(); changed(false); } }, '+')),
         h('div', { class: 'c' },
           (() => { const s = h('select', { title: 'pattern', onchange: e => { snap(); en.p = +e.target.value; renderSong(); changed(false); } }, ...LETTERS.split('').map((L, k) => h('option', { value: k, selected: k === en.p }, L))); return s; })(),
-          (() => { const s = h('select', { title: 'section effect: build = filter sweep + riser, break = low-pass dip', onchange: e => { snap(); en.fx = e.target.value; changed(false); } }, ...[['', 'no fx'], ['build', 'build'], ['break', 'break']].map(([v, l]) => h('option', { value: v, selected: v === (en.fx || '') }, l))); return s; })(),
+          (() => { const s = h('select', { title: 'Section effect. filter in/out: lowpass opens or closes over the section. build: highpass sweep, riser and a gap before the next section. break: low-pass dip. riser: noise sweep. drop gap: silence on the last beat.', onchange: e => { snap(); en.fx = e.target.value; changed(false); } }, ...TS.FX_NAMES.map(([v, l]) => h('option', { value: v, selected: v === (en.fx || '') }, l))); return s; })(),
           h('button', { title: 'move left', onclick: () => { if (!i) return; snap(); [S.chain[i - 1], S.chain[i]] = [S.chain[i], S.chain[i - 1]]; songSel = i - 1; renderSong(); changed(false); } }, '‹'),
           h('button', { title: 'remove', onclick: () => { if (S.chain.length < 2) return; snap(); S.chain.splice(i, 1); songSel = Math.min(songSel, S.chain.length - 1); renderSong(); changed(false); } }, '×')));
     });
@@ -306,6 +319,7 @@ var TS = window.TS = window.TS || {};
 
     const tools = [
       h('button', { 'data-help': 'Make a new part for this instrument in the current style (R).', onclick: () => reroll(id) }, 'Re-roll'),
+      h('button', { 'data-help': 'Small random changes to this part: a few steps or notes move.', onclick: () => { snap(); TS.mutate(S.pats[S.cur], id, TS.scale(S).length); updRow(id); renderRoll(); changed(false); } }, 'Mutate'),
       h('button', { 'data-help': 'Remove every step for this instrument in this pattern.', onclick: () => { snap(); S.pats[S.cur][id] = TS.emptyPattern()[id]; if (S.pats[S.cur].x) delete S.pats[S.cur].x[id]; updRow(id); renderRoll(); renderPats(); changed(false); } }, 'Clear'),
       h('button', { 'data-help': 'Shift every step one to the left.', onclick: () => shift(id, 1) }, '◀ shift'),
       h('button', { 'data-help': 'Shift every step one to the right.', onclick: () => shift(id, -1) }, 'shift ▶')
@@ -324,6 +338,8 @@ var TS = window.TS = window.TS || {};
       h('div', { class: 'ttools' }, ...tools),
       melodic ? h('div', { id: 'roll', class: 'roll' }) : '',
       melodic ? h('p', { class: 'desc', style: 'margin:2px 0 0;font-size:12px' }, 'Click a row to place a note on that step, click it again to remove. Accent = louder and brighter. Slide = glide into the next note.') : '',
+      TS.PRESETS[id] ? h('div', { class: 'presets', 'data-help': 'Presets: starting points for this sound. Tweak from there.' }, h('span', {}, 'Presets'),
+        ...Object.entries(TS.PRESETS[id]).map(([name, vals]) => h('button', { onclick: () => { snap(); Object.assign(tr.p, vals); renderTrack(); changed(false); audition(id, melodic ? { d: 0 } : 1); } }, name))) : '',
       h('h3', {}, 'Sound'), h('div', { class: 'knobs' }, ...sound),
       h('h3', {}, 'Mix'), h('div', { class: 'knobs' }, ...mix),
       formula);
@@ -401,6 +417,7 @@ var TS = window.TS = window.TS || {};
     ['dfb', 'delay feedback', 0, 0.9, 0.4, '', 'How many echoes. Above 0.7 they build up, dub style.'],
     ['dtone', 'delay tone', 0, 1, 0.6, '', 'Darker or brighter echoes.'],
     ['rsize', 'reverb size', 0.3, 8, 2.2, 's', 'Reverb decay time (RT60): seconds for the tail to fall 60 dB.'],
+    ['human', 'humanize', 0, 20, 0, 'ms', 'Random timing offset per hit, up to this many milliseconds. The kick stays tight.'],
     ['vol', 'volume', 0, 1, 0.8, '', 'Master volume.']
   ];
   function renderMaster() {

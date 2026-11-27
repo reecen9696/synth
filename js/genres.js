@@ -147,14 +147,14 @@ TS.GENRES = {
 /* Song sections. `use` lists the tracks that play. `fx` is applied to the
    chain entry: build = highpass sweep up + noise riser, break = low-pass dip. */
 TS.SECTIONS = [
-  { name: 'Intro', bars: 8, use: ['kick', 'chat', 'rim', 'shaker'], fx: '' },
+  { name: 'Intro', bars: 8, use: ['kick', 'chat', 'rim', 'shaker'], fx: 'fadein' },
   { name: 'Groove', bars: 8, use: ['kick', 'chat', 'ohat', 'rim', 'shaker', 'tom', 'bass', 'cow'], fx: '' },
   { name: 'Main', bars: 16, use: 'all-but-pad', fx: '' },
   { name: 'Break', bars: 8, use: ['pad', 'stab', 'pluck', 'chat', 'ride'], fx: 'break' },
   { name: 'Build', bars: 4, use: ['snare', 'clap', 'chat', 'ohat', 'pad', 'stab', 'pluck', 'acid', 'bass'], fx: 'build', roll: true },
   { name: 'Drop', bars: 16, use: 'all', fx: '' },
   { name: 'Peak', bars: 16, use: 'all', fx: '', dense: true },
-  { name: 'Outro', bars: 8, use: ['kick', 'chat', 'ohat', 'rim', 'bass', 'shaker'], fx: '' }
+  { name: 'Outro', bars: 8, use: ['kick', 'chat', 'ohat', 'rim', 'bass', 'shaker'], fx: 'fadeout' }
 ];
 
 TS.defaultTrack = id => {
@@ -169,7 +169,7 @@ TS.defaultState = () => {
     v: 2, bpm: 132, swing: 50, key: 9, scale: 'phrygian', genre: 'berlin', seed: 1, songLen: 1, fills: true,
     cur: 0, mode: 'pattern', chain: [{ p: 0, r: 4, fx: '' }],
     tracks: {}, pats: Array.from({ length: 8 }, TS.emptyPattern),
-    fx: { filter: 0, dtime: 3, dfb: 0.4, dtone: 0.6, rsize: 2.2, drive: 0.2, crush: 0, duck: 0.6, duckRel: 0.18, vol: 0.8 }
+    fx: { filter: 0, dtime: 3, dfb: 0.4, dtone: 0.6, rsize: 2.2, drive: 0.2, crush: 0, duck: 0.6, duckRel: 0.18, human: 0, vol: 0.8 }
   };
   for (const id of TS.ORDER) s.tracks[id] = TS.defaultTrack(id);
   return s;
@@ -223,4 +223,28 @@ TS.makeSong = (s, gid, seed) => {
   s.pats[6].bass = s.pats[2].bass.map(x => x && { ...x });
   s.chain = TS.SECTIONS.map((sec, i) => ({ p: i, r: sec.bars * (s.songLen || 1), fx: sec.fx }));
   s.cur = 2;
+};
+
+/* Mutate: small changes, not a new part. Each drum step flips with ~8%
+   chance (kick on the beat is left alone); each note may move a scale step,
+   gain or lose an accent or slide. */
+TS.mutate = (pat, id, L, R = Math.random) => {
+  const a = pat[id];
+  if (TS.MELODIC.has(id)) {
+    for (let i = 0; i < 16; i++) {
+      const v = a[i];
+      if (v) {
+        if (R() < 0.2) v.d = Math.max(-3, Math.min(L * 2, v.d + [-2, -1, 1, 2, L, -L][Math.floor(R() * 6)]));
+        if (R() < 0.12) v.a = !v.a;
+        if (R() < 0.1) v.s = !v.s;
+        if (R() < 0.06) a[i] = null;
+      } else if (R() < 0.07) a[i] = { d: [0, 0, 2, 4, L][Math.floor(R() * 5)], a: false, s: false };
+    }
+  } else {
+    for (let i = 0; i < 16; i++) {
+      if (id === 'kick' && i % 4 === 0) continue;
+      if (R() < 0.08) a[i] = a[i] ? 0 : 1;
+      else if (a[i] && R() < 0.06) a[i] = a[i] === 2 ? 1 : 2;
+    }
+  }
 };

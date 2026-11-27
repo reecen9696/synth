@@ -14,9 +14,11 @@ TS.stepX = (pat, id, i) => pat.x && pat.x[id] ? pat.x[id][i] : null;
 
 TS.playStep = (E, s, pat, abs, t, sd, R = Math.random, fill = false) => {
   const anySolo = TS.ORDER.some(id => s.tracks[id].solo);
-  const tt = t + TS.swingOffset(s, abs, sd);
+  const t0 = t + TS.swingOffset(s, abs, sd), hum = (s.fx.human || 0) / 1000;
   for (const id of TS.ORDER) {
     const tr = s.tracks[id];
+    // humanize: random timing offset up to ±human ms; the kick stays on the grid
+    const tt = hum && id !== 'kick' ? Math.max(t, t0 + (R() * 2 - 1) * hum) : t0;
     if (tr.mute || (anySolo && !tr.solo)) continue;
     const len = tr.len || 16, steps = pat[id], i = abs % len, val = steps[i];
     if (!val) continue;
@@ -34,7 +36,7 @@ TS.playStep = (E, s, pat, abs, t, sd, R = Math.random, fill = false) => {
       try { TS.VOICES[id].play(E, tt + k * sub, e, tr.p, E.ch[id].in, sub); } catch (err) { console.error(id, err); }
     }
   }
-  if (fill) TS.fill(E, s, abs, tt, sd);
+  if (fill) TS.fill(E, s, abs, t0, sd);
 };
 
 /* Drum fill on the last beat of a phrase: a snare roll that doubles speed
@@ -56,22 +58,46 @@ TS.isFillBar = (s, en, rep) => !!s.fills && en.r >= 4 && en.fx !== 'break' && (r
    break: lowpass dips to ~1.2 kHz for the bars, then opens again. */
 TS.entryFx = (E, s, fx, t, dur, bar) => {
   if (!fx) return;
-  const base = TS.filterFreqs(s.fx.filter);
+  const base = TS.filterFreqs(s.fx.filter), lp = E.lp.frequency, hp = E.hp.frequency;
   E.autoUntil = t + dur;
   if (fx === 'build') {
-    E.hp.frequency.cancelScheduledValues(t);
-    E.hp.frequency.setValueAtTime(Math.max(20, base.hp), t);
-    E.hp.frequency.exponentialRampToValueAtTime(900, t + dur);
-    E.hp.frequency.setValueAtTime(base.hp, t + dur);
+    hp.cancelScheduledValues(t);
+    hp.setValueAtTime(Math.max(20, base.hp), t);
+    hp.exponentialRampToValueAtTime(900, t + dur);
+    hp.setValueAtTime(base.hp, t + dur);
     TS.riser(E, t, dur);
+    TS.gap(E, t + dur, bar / 8);         // half a beat of silence before the drop
   } else if (fx === 'break') {
-    E.lp.frequency.cancelScheduledValues(t);
-    E.lp.frequency.setValueAtTime(base.lp, t);
-    E.lp.frequency.exponentialRampToValueAtTime(1200, t + Math.min(bar, dur / 2));
-    E.lp.frequency.setValueAtTime(1200, t + dur - Math.min(bar, dur / 2));
-    E.lp.frequency.exponentialRampToValueAtTime(base.lp, t + dur);
+    lp.cancelScheduledValues(t);
+    lp.setValueAtTime(base.lp, t);
+    lp.exponentialRampToValueAtTime(1200, t + Math.min(bar, dur / 2));
+    lp.setValueAtTime(1200, t + dur - Math.min(bar, dur / 2));
+    lp.exponentialRampToValueAtTime(base.lp, t + dur);
+  } else if (fx === 'fadein') {        // lowpass opens from 250 Hz over the section
+    lp.cancelScheduledValues(t);
+    lp.setValueAtTime(250, t);
+    lp.exponentialRampToValueAtTime(base.lp, t + dur);
+  } else if (fx === 'fadeout') {       // lowpass closes to 250 Hz over the section
+    lp.cancelScheduledValues(t);
+    lp.setValueAtTime(base.lp, t);
+    lp.exponentialRampToValueAtTime(250, t + dur);
+    lp.setValueAtTime(base.lp, t + dur);
+  } else if (fx === 'riser') {
+    E.autoUntil = 0;
+    TS.riser(E, t, dur);
+  } else if (fx === 'gap') {           // silence on the last beat: the drop hits harder
+    E.autoUntil = 0;
+    TS.gap(E, t + dur, bar / 4);
   }
 };
+TS.gap = (E, end, len) => {
+  const g = E.sum.gain;
+  g.setValueAtTime(1, end - len);
+  g.linearRampToValueAtTime(0, end - len + 0.005);
+  g.setValueAtTime(0, end - 0.005);
+  g.linearRampToValueAtTime(1, end);
+};
+TS.FX_NAMES = [['', 'no fx'], ['fadein', 'filter in'], ['fadeout', 'filter out'], ['build', 'build'], ['break', 'break'], ['riser', 'riser'], ['gap', 'drop gap']];
 
 /* ---------------- live playback ----------------
    Look-ahead scheduling (Chris Wilson, "A tale of two clocks"): a timer wakes
@@ -102,6 +128,7 @@ TS.Seq = {
     const now = E.ac.currentTime;
     E.autoUntil = 0;
     E.hp.frequency.cancelScheduledValues(now); E.lp.frequency.cancelScheduledValues(now);
+    E.sum.gain.cancelScheduledValues(now); E.sum.gain.setValueAtTime(1, now);
     TS.setFilter(E, this.s.fx.filter, now);
   },
   bar(t, sd) {

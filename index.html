@@ -13,6 +13,7 @@
   <label class="field" data-help="Tempo in beats per minute. Techno sits between 118 and 160.">
     <span>Tempo</span><input id="bpm" type="number" min="60" max="200" step="1"><small>bpm</small>
   </label>
+  <button id="tap" data-help="Tap tempo: click in time with the beat four or more times.">Tap</button>
   <label class="field" data-help="Swing pushes every second 16th note late. 50% is straight, 58% is a gentle shuffle, 66% is a triplet feel.">
     <span>Swing</span><input id="swing" type="range" min="50" max="75" step="1"><output id="swingv"></output>
   </label>
@@ -55,6 +56,7 @@
   <div class="pattools">
     <button id="copy" data-help="Copy this pattern.">Copy</button>
     <button id="paste" data-help="Paste over this pattern.">Paste</button>
+    <button id="mutate" data-help="Mutate: make small random changes to every part in this pattern. Good for variations between sections.">Mutate</button>
     <button id="vary" data-help="Re-roll this pattern in the current style.">Re-roll</button>
     <button id="clear" data-help="Clear every track in this pattern.">Clear</button>
   </div>
