@@ -108,6 +108,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radiu
     <div id="voices" role="group" aria-label="Voice"></div>
     <span class="sp"></span>
     <button id="new" hidden>new pattern</button>
+    <button id="reset" title="forget your changes and load the default patterns and sounds">reset</button>
   </div>
 
   <div id="presets"></div>
@@ -621,10 +622,10 @@ $('swing').oninput=e=>{scene.swing=+e.target.value;$('swingv').textContent='swin
 
 /* autosave: patterns, sounds, sequence and switches stay after a reload */
 const KEY='techno-function-synth';
-function save(){try{localStorage.setItem(KEY,JSON.stringify({v:1,scene:SCENES.indexOf(scene),nBars,ON,sel,scenes:SCENES.map(s=>({pat:s.pat,P:s.P,arr:s.arr,bpm:s.bpm,swing:s.swing}))}))}catch(e){}}
+function save(){if(resetting)return;try{localStorage.setItem(KEY,JSON.stringify({v:2,scene:SCENES.indexOf(scene),nBars,ON,sel,scenes:SCENES.map(s=>({pat:s.pat,P:s.P,arr:s.arr,bpm:s.bpm,swing:s.swing}))}))}catch(e){}}
 function load(){
   try{
-    const d=JSON.parse(localStorage.getItem(KEY));if(!d||d.v!==1)return 0;
+    const d=JSON.parse(localStorage.getItem(KEY));if(!d||d.v!==2)return 0;
     nBars=d.nBars||4;Object.assign(ON,d.ON);if(DEF[d.sel])sel=d.sel;
     d.scenes.forEach((x,i)=>{const s=SCENES[i];if(!s||!x)return;
       if(x.pat&&x.pat.vox&&x.pat.vox.some(n=>typeof n==='number')){x.pat.vox=x.pat.vox.map(n=>n?{d:4,a:false,s:false}:null);if(x.arr)delete x.arr.vox}
@@ -634,7 +635,9 @@ function load(){
     return d.scene||0;
   }catch(e){return 0}
 }
-setInterval(save,1500);addEventListener('pagehide',save);
+let resetting=false;
+setInterval(save,1500);addEventListener('pagehide',()=>{if(!resetting)save()});
+$('reset').onclick=()=>{resetting=true;localStorage.removeItem(KEY);location.reload()};
 $('new').onclick=()=>randomise(sel);
 
 /* ---------- switches and sequence ---------- */
