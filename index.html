@@ -99,9 +99,16 @@ select option{font-style:normal;color:#111;background:#fff}
 .clip button[aria-pressed]{text-decoration:none;max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .clip .arrow{opacity:.35;margin:0 -2px 0 2px}
 #tw{position:static;width:100%;height:56px;cursor:ew-resize;touch-action:none}
-#track.empty .k,#track.empty #t-match,#track.empty #t-listen{display:none}
-#t-slot{max-width:170px}
-#t-sum{font-style:italic;opacity:.6;font-variant-numeric:tabular-nums}
+#track{gap:8px}
+#track.empty .k,#track.empty #t-match{display:none}
+#t-list{display:flex;flex-wrap:wrap;gap:8px}
+/* a track: click plays it once, double-click loops it (shown by the border) */
+.tbox{position:relative;opacity:.75;text-align:left;padding:6px 12px 8px;border:1.5px solid transparent;border-radius:6px;background:color-mix(in srgb,var(--ink) 9%,transparent);font-size:15px;min-width:92px;overflow:hidden;text-decoration:none!important}
+.tbox:hover{opacity:1}
+.tbox.loop{border-color:var(--ink);opacity:1}
+.tbox.on{opacity:1}
+.tbox small{display:block;opacity:.65;font-size:12px;font-variant-numeric:tabular-nums}
+.tbox i{position:absolute;left:0;bottom:0;height:3px;width:0;background:var(--dot)}
 a{color:inherit;text-underline-offset:4px;opacity:.75}a:hover{opacity:1}
 #knobs{padding-left:92px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 26px}
 .k label{display:flex;justify-content:space-between;font-style:italic;font-size:15px}
@@ -143,15 +150,12 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radiu
     <button id="reset" title="forget your changes and load the default patterns and sounds">reset</button>
   </div>
 
-  <section id="track" aria-label="Background track">
+  <section id="track" aria-label="Your tracks">
+    <div id="t-list" role="group" aria-label="Tracks: click to play once, double-click to loop"></div>
     <div class="trow">
-      <button class="tgl" id="t-on" aria-pressed="true" title="play the track with the song"><span class="nm">track</span><span class="sw"><i></i></span></button>
-      <button id="t-listen" title="hear the pieces in order, without the song">listen</button>
       <div class="k"><label for="t-filter">filter<output id="t-filterv"></output></label><input id="t-filter" type="range" min="-1" max="1" step=".01"></div>
       <div class="k"><label for="t-level">level<output id="t-levelv"></output></label><input id="t-level" type="range" min="0" max="1" step=".01"></div>
-      <button id="t-match" aria-pressed="true" title="change the track's speed so it lines up with the bars">match beat</button>
-      <select id="t-slot" aria-label="Which saved slot plays"></select>
-      <span id="t-sum"></span>
+      <button id="t-match" aria-pressed="true" title="change a track's speed so it lines up with the bars">match beat</button>
       <a id="t-edit" href="editor.html">cut &amp; arrange →</a>
     </div>
   </section>
@@ -438,38 +442,34 @@ let playing=false,step=0,bar=0,nextBar=null,nextT=0,timer,queue=[];
    match beat: one piece with a steady beat is sped up or slowed to the song's tempo (speed = song bpm / track bpm).
    Otherwise the speed is nudged (at most ~15%) so the row lasts a whole number of bars.
    filter knob x: left of centre lowpass 20000·(1/100)^(−x) Hz, right of centre highpass 20·200^x Hz. */
-const TR={slot:0,slots:[],on:true,filter:0,level:.6,match:true,files:{},clips:[],cur:0,bpm:0,srcs:[],plan:[],rate:1,solo:false,bar:0};
-const clip=()=>TR.clips[TR.cur];
-const trackLen=()=>TR.clips.reduce((x,c)=>x+c.b-c.a,0);
-function trackPlan(){
-  const len=trackLen(),barLen=240/bpm;let rate=1,n=Math.max(1,Math.ceil(len/barLen-.01));
+const TR={slots:[],loops:[],from:{},live:{},bpm:{},filter:0,level:.6,match:true,files:{},bar:0};
+const slotLen=i=>TR.slots[i]?TR.slots[i].clips.reduce((x,c)=>x+c.b-c.a,0):0;
+// speed and loop length (in bars) for one track
+function slotPlan(i){
+  const len=slotLen(i),barLen=240/bpm,tb=TR.bpm[i];let rate=1,n=Math.max(1,Math.ceil(len/barLen-.01));
   if(TR.match){
-    if(TR.bpm){rate=bpm/TR.bpm;while(rate>1.42)rate/=2;while(rate<.71)rate*=2;n=Math.max(1,Math.round(len/rate/barLen))}
+    if(tb){rate=bpm/tb;while(rate>1.42)rate/=2;while(rate<.71)rate*=2;n=Math.max(1,Math.round(len/rate/barLen))}
     else{const k=Math.max(1,Math.round(len/barLen)),r=len/(k*barLen);if(r>.85&&r<1.18){rate=r;n=k}}
   }
   return {rate,n};
 }
-// schedule pieces back to back from time t. list = [{c: piece, from, len}] in file seconds
-function trackPlay(t,rate,list){
-  let at=t;TR.rate=rate;
-  for(const {c,from,len} of list){const f=TR.files[c.f];if(!f||len<.02)continue;
-    const s=ac.createBufferSource();s.buffer=f.buf;s.playbackRate.value=rate;chain(s,G(f.norm),N.tLp);s.start(at,from,len);
-    TR.srcs.push(s);TR.plan.push({c,t0:at,p0:from,end:at+len/rate});at+=len/rate}
+// play a track's pieces back to back from time t
+function slotPlay(i,t){
+  slotStop(i,t);const {rate}=slotPlan(i),srcs=[];let at=t;
+  for(const c of TR.slots[i].clips){const f=TR.files[c.f],len=c.b-c.a;if(!f||len<.02)continue;
+    const s=ac.createBufferSource();s.buffer=f.buf;s.playbackRate.value=rate;chain(s,G(f.norm),N.tLp);s.start(at,c.a,len);srcs.push(s);at+=len/rate}
+  if(!srcs.length)return;
+  TR.live[i]={srcs,t0:t,end:at};
+  srcs[srcs.length-1].onended=()=>{if(!TR.live[i]||TR.live[i].srcs!==srcs)return;delete TR.live[i];
+    if(!playing&&TR.loops.includes(i))slotPlay(i,ac.currentTime+.02)};   // song stopped: a looping track repeats by itself
 }
+function slotStop(i,t){const L=TR.live[i];if(!L)return;for(const s of L.srcs)try{s.onended=null;t?s.stop(t):s.stop()}catch(e){}delete TR.live[i]}
+function trackStop(){for(const i of Object.keys(TR.live))slotStop(+i)}
+// every bar: looping tracks restart when their number of bars is up
 function trackFire(t){
-  if(!TR.clips.length||!TR.on||trackLen()<.05){TR.bar++;return}
-  const {rate,n}=trackPlan();
-  if(TR.bar++%n)return;
-  trackStop(t);trackPlay(t,rate,TR.clips.map(c=>({c,from:c.a,len:c.b-c.a})));
+  for(const i of TR.loops){if(slotLen(i)<.05)continue;if((TR.bar-(TR.from[i]||0))%slotPlan(i).n===0)slotPlay(i,t)}
+  TR.bar++;
 }
-// listen: play pieces on their own, before or without the song
-function trackListen(list){
-  if(!list.length)return;initAudio();ac.resume();trackStop();
-  trackPlay(ac.currentTime+.02,trackPlan().rate,list);TR.solo=true;listenUI();
-  const last=TR.srcs[TR.srcs.length-1];if(last)last.onended=()=>{if(TR.srcs.includes(last))trackStop()};
-}
-function listenUI(){const el=document.getElementById('t-listen');if(el){el.textContent=TR.solo?'stop':'listen';el.setAttribute('aria-pressed',!!TR.solo)}}
-function trackStop(t){for(const s of TR.srcs)try{s.onended=null;t?s.stop(t):s.stop()}catch(e){}TR.srcs=[];TR.plan=[];TR.solo=false;listenUI()}
 function trackParams(){
   if(!ac)return;const x=TR.filter,now=ac.currentTime;
   N.tLp.frequency.setTargetAtTime(x<0?20000*Math.pow(.01,-x):20000,now,.02);
@@ -502,7 +502,7 @@ function tick(){
 function toggle(){
   initAudio();
   if(playing){clearTimeout(timer);playing=false;queue=[];trackStop();N.vca.gain.cancelScheduledValues(0);N.vca.gain.setTargetAtTime(0,ac.currentTime,.01)}
-  else{ac.resume();TR.bar=0;step=0;bar=nextBar!=null?nextBar:0;nextBar=null;nextT=ac.currentTime+.06;playing=true;tick()}
+  else{ac.resume();trackStop();TR.bar=0;TR.from={};step=0;bar=nextBar!=null?nextBar:0;nextBar=null;nextT=ac.currentTime+.06;playing=true;tick()}
   const pb=document.getElementById('play');pb.classList.toggle('on',playing);pb.setAttribute('aria-label',playing?'Stop':'Play');
 }
 
@@ -820,25 +820,40 @@ addEventListener('keyup',e=>{const d=KEYS.indexOf(e.key.toLowerCase());if(d>=0)h
 addEventListener('blur',()=>held.clear());
 addEventListener('keyup',e=>{if(e.code==='Space')e.preventDefault()});
 /* ---------- track UI ----------
-   The cutting happens on editor.html. Both pages share the same saved pieces (localStorage) and files (IndexedDB). */
+   The tracks are cut on editor.html (one per slot). Here each one is a box: click plays it once,
+   double-click loops it. Both pages share the same storage (localStorage for the cuts, IndexedDB for the files). */
 const TKEY='techno-track';
 const mmss=t=>Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0');
 const trackRead=()=>{try{return JSON.parse(localStorage.getItem(TKEY))}catch(e){return null}};
-function trackSave(){try{const st=trackRead()||{v:3,slots:[{name:'',clips:TR.clips}],slot:0};   // the editor owns the slots; this page only changes the settings and which slot plays
-  if(!st.slots){st.v=3;st.slots=[{name:'',clips:st.clips||TR.clips}];st.slot=0}
-  Object.assign(st,{slot:TR.slot,filter:TR.filter,level:TR.level,match:TR.match,on:TR.on});localStorage.setItem(TKEY,JSON.stringify(st))}catch(e){}}
-function trackBeat(){const c=TR.clips[0];TR.bpm=TR.clips.length===1&&TR.files[c.f]?detectBpm(TR.files[c.f].buf,c.a,c.b):0}
+function trackSave(){try{const st=trackRead()||{v:3,slots:TR.slots,slot:0};   // the editor owns the slots; this page only saves its settings
+  if(!st.slots){st.v=3;st.slots=TR.slots;st.slot=0}
+  Object.assign(st,{loops:TR.loops,filter:TR.filter,level:TR.level,match:TR.match});localStorage.setItem(TKEY,JSON.stringify(st))}catch(e){}}
 function trackUI(){
-  const n=TR.clips.length;$('track').classList.toggle('empty',!n);
-  $('t-on').setAttribute('aria-pressed',TR.on);$('t-match').setAttribute('aria-pressed',TR.match);
-  $('t-filter').value=TR.filter;$('t-level').value=TR.level;
+  const used=TR.slots.map((x,i)=>i).filter(i=>slotLen(i)>0);
+  $('track').classList.toggle('empty',!used.length);
+  $('t-match').setAttribute('aria-pressed',TR.match);$('t-filter').value=TR.filter;$('t-level').value=TR.level;
   const x=TR.filter;$('t-filterv').textContent=Math.abs(x)<.02?'off':x<0?'low '+Math.round(20000*Math.pow(.01,-x))+' Hz':'high '+Math.round(20*Math.pow(200,x))+' Hz';
   $('t-levelv').textContent=TR.level.toFixed(2);
-  const used=TR.slots.map((x,i)=>[x,i]).filter(([x,i])=>x&&(x.clips.length||i===TR.slot));
-  $('t-slot').hidden=used.length<2;
-  $('t-slot').innerHTML=used.map(([x,i])=>`<option value="${i}"${i===TR.slot?' selected':''}>slot ${i+1}${x.name?' · '+x.name.replace(/</g,'&lt;'):''}</option>`).join('');
-  $('t-sum').textContent=n?`${n} piece${n>1?'s':''} · ${mmss(trackLen())}`:'no track yet';
+  $('t-list').innerHTML=used.map(i=>`<button class="tbox${TR.loops.includes(i)?' loop':''}" data-i="${i}" aria-pressed="${TR.loops.includes(i)}" title="click: play once · double-click: loop">${(TR.slots[i].name||'track '+(i+1)).replace(/</g,'&lt;')}<small>${mmss(slotLen(i))}</small><i></i></button>`).join('');
 }
+// progress line along the bottom of a box while it sounds
+(function meter(){requestAnimationFrame(meter);if(!ac)return;const now=ac.currentTime;
+  for(const el of $('t-list').children){const L=TR.live[el.dataset.i],on=!!L&&now>=L.t0&&now<L.end;
+    el.classList.toggle('on',on);el.lastChild.style.width=on?(now-L.t0)/(L.end-L.t0)*100+'%':'0'}})();
+{let wait=null;
+  // click: play once (on the next beat if the song is running), or stop it if it is sounding
+  const once=i=>{initAudio();ac.resume();
+    if(TR.loops.includes(i)){TR.loops=TR.loops.filter(x=>x!==i);slotStop(i);trackUI();trackSave();return}
+    if(TR.live[i]){slotStop(i);return}
+    slotPlay(i,playing?nextT+((4-step%4)%4)*60/bpm/4:ac.currentTime+.02)};
+  // double-click: loop on or off
+  const loop=i=>{initAudio();ac.resume();
+    if(TR.loops.includes(i)){TR.loops=TR.loops.filter(x=>x!==i);slotStop(i)}
+    else{TR.loops.push(i);TR.from[i]=TR.bar;slotStop(i);if(!playing)slotPlay(i,ac.currentTime+.02)}
+    trackUI();trackSave()};
+  $('t-list').onclick=e=>{const b=e.target.closest('.tbox');if(!b)return;const i=+b.dataset.i;
+    if(e.detail>1)return;clearTimeout(wait);wait=setTimeout(()=>once(i),230)};
+  $('t-list').ondblclick=e=>{const b=e.target.closest('.tbox');if(!b)return;clearTimeout(wait);loop(+b.dataset.i)}}
 // decode a file and measure how much to boost it (norm)
 async function trackFile(id,data,name){
   try{
@@ -849,30 +864,30 @@ async function trackFile(id,data,name){
 }
 function idb(op,key,val){return new Promise(res=>{const rq=indexedDB.open('techno-track',1);rq.onupgradeneeded=()=>rq.result.createObjectStore('f');
   rq.onerror=()=>res(null);rq.onsuccess=()=>{const st=rq.result.transaction('f','readwrite').objectStore('f'),r=op==='all'?st.getAll():op==='put'?st.put(val,key):st.delete(key);r.onsuccess=()=>res(r.result);r.onerror=()=>res(null)}})}
-$('t-on').onclick=()=>{TR.on=!TR.on;if(!TR.on)trackStop();else TR.bar=0;trackUI();trackSave()};
-$('t-listen').onclick=()=>{if(TR.solo)trackStop();else trackListen(TR.clips.map(c=>({c,from:c.a,len:c.b-c.a})))};
-$('t-slot').onchange=e=>{TR.slot=+e.target.value;trackStop();trackSave();trackOpen();e.target.blur()};
-$('t-match').onclick=()=>{TR.match=!TR.match;TR.bar=0;trackUI();trackSave()};
+$('t-match').onclick=()=>{TR.match=!TR.match;trackUI();trackSave()};
 $('t-filter').oninput=e=>{TR.filter=+e.target.value;trackParams();trackUI();trackSave()};
 $('t-level').oninput=e=>{TR.level=+e.target.value;trackParams();trackUI();trackSave()};
-// load the saved pieces and their files. Runs at start and again when you come back from the editor
+// load the saved tracks and their files. Runs at start and again when you come back from the editor
 async function trackOpen(){
-  let st=trackRead();
-  if(st&&st.slots){TR.slot=Math.min(st.slot||0,st.slots.length-1);TR.slots=st.slots;st.clips=(st.slots[TR.slot]||{clips:[]}).clips}   // play the selected slot
+  const st=trackRead();
+  let slots=st&&st.slots?st.slots.map(x=>x||{name:'',clips:[]}):st&&st.clips?[{name:'',clips:st.clips}]:null;
+  const all=(slots||[]).flatMap(x=>x.clips);
   for(const k of (await idb('all'))||[])if(k&&k.data&&!TR.files[k.id||'old'])await trackFile(k.id||'old',k.data,k.name);
-  if(!TR.files.default&&(!st||!st.clips||st.clips.some(c=>c.f==='default')))try{const r=await fetch('tracks/default.mp3');if(r.ok)await trackFile('default',await r.arrayBuffer(),'default track')}catch(e){}
+  if(!TR.files.default&&(!slots||all.some(c=>c.f==='default')))try{const r=await fetch('tracks/default.mp3');if(r.ok)await trackFile('default',await r.arrayBuffer(),'default track')}catch(e){}
   // pieces cut from other files in the tracks folder (ids look like lib:name.mp3)
-  for(const c of (st&&st.clips)||[])if(c.f.startsWith('lib:')&&!TR.files[c.f])try{const r=await fetch('tracks/'+c.f.slice(4));if(r.ok)await trackFile(c.f,await r.arrayBuffer(),c.f.slice(4))}catch(e){}
-  if(st&&st.clips)Object.assign(TR,{clips:st.clips,cur:st.cur||0,filter:st.filter,level:st.level,match:st.match,on:st.on});
-  else{if(st&&st.filter!=null)Object.assign(TR,{filter:st.filter,level:st.level,match:st.match,on:st.on});
-    const id=TR.files.old?'old':TR.files.default?'default':null;                  // first run, or settings from the one-piece version
-    if(id&&!(st&&st.removed)){const dur=TR.files[id].buf.duration;TR.clips=[{f:id,a:st&&st.a<dur?st.a:0,b:st&&st.b?Math.min(st.b,dur):dur}]}}
-  TR.clips=TR.clips.filter(c=>TR.files[c.f]).map(c=>({f:c.f,a:c.a,b:Math.min(c.b,TR.files[c.f].buf.duration)}));
-  TR.bar=0;if(TR.clips.length)trackBeat();trackParams();trackUI();
+  for(const c of all)if(c.f.startsWith('lib:')&&!TR.files[c.f])try{const r=await fetch('tracks/'+c.f.slice(4));if(r.ok)await trackFile(c.f,await r.arrayBuffer(),c.f.slice(4))}catch(e){}
+  if(!slots){const id=TR.files.old?'old':TR.files.default?'default':null;slots=id?[{name:'',clips:[{f:id,a:0,b:TR.files[id].buf.duration}]}]:[]}   // first run
+  for(const x of slots)x.clips=x.clips.filter(c=>TR.files[c.f]).map(c=>({f:c.f,a:c.a,b:Math.min(c.b,TR.files[c.f].buf.duration)}));
+  trackStop();TR.slots=slots;
+  if(st){for(const k of ['filter','level','match'])if(st[k]!=null)TR[k]=st[k]}
+  // which tracks loop. Saves from before the boxes: the selected slot looped if the track switch was on
+  TR.loops=(st&&st.loops?st.loops:st&&st.on===false?[]:[st&&st.slot||0]).filter(i=>slotLen(i)>0);
+  TR.bpm={};slots.forEach((x,i)=>{const c=x.clips[0];if(x.clips.length===1&&TR.files[c.f])TR.bpm[i]=detectBpm(TR.files[c.f].buf,c.a,c.b)});
+  TR.from={};trackParams();trackUI();
 }
 trackUI();trackOpen();
 addEventListener('pageshow',e=>{if(e.persisted)trackOpen()});
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)trackOpen()});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!playing)trackOpen()});
 {const i=load();const v=sel;setScene(SCENES[i]);select(v)}draw();
 </script>
 </body>
