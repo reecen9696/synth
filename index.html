@@ -21,9 +21,14 @@ body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:17p
   display:flex;flex-direction:column;transition:background .4s,color .4s;overflow:auto}
 .wrap{flex:1;display:flex;flex-direction:column;gap:14px;width:100%;max-width:1180px;margin:0 auto;padding:18px 22px 22px;min-height:560px}
 header,.bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 22px}
-#scenes{display:flex;flex-wrap:wrap;gap:2px 14px;flex:1;min-width:0}
-header{flex-wrap:nowrap!important;gap:6px 18px!important}
-header .tempo{flex:none}
+header{position:relative;justify-content:flex-end;min-height:30px}
+#menuBtn{opacity:.75;font-variant-numeric:tabular-nums}
+#menuBtn::after{content:" ▾";font-size:.8em}
+#menuBtn[aria-expanded="true"]{opacity:1}
+#menu{position:absolute;top:100%;right:0;z-index:5;background:var(--bg);border:1.5px solid var(--ink);border-radius:6px;padding:12px 16px;display:flex;flex-direction:column;gap:10px;min-width:230px}
+#scenes{display:grid;grid-template-columns:1fr 1fr;gap:0 18px}
+#scenes button{text-align:left}
+#menu .tempo input{flex:1;width:auto}
 .sp{flex:1}
 button{font:inherit;color:inherit;background:none;border:0;padding:4px 2px;cursor:pointer;opacity:.5}
 button:hover{opacity:.8}
@@ -71,13 +76,17 @@ canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;touch-a
 #formula sup,#formula sub{font-size:.68em}
 .fr{display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:.8em;line-height:1.15;margin:0 2px}
 .fr span:first-child{border-bottom:1px solid currentColor;padding:0 3px}
-#presets{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;font-size:15px;min-height:1.6em}
+#presets{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;font-size:15px}
+select{font:inherit;font-style:italic;color:inherit;background:transparent;border:0;border-bottom:1.5px solid var(--ink);border-radius:0;padding:3px 2px;cursor:pointer;opacity:.8;max-width:150px}
+select:hover,select:focus{opacity:1}
+select:focus-visible{outline:1.5px dashed var(--ink);outline-offset:3px}
+select option{font-style:normal;color:#111;background:#fff}
 #presets span{font-style:italic;opacity:.6;margin-right:-4px}
 #presets .gap{width:18px}
 [hidden]{display:none!important}
 #presets .br{flex-basis:100%;height:0}
 #rec.on{opacity:1;color:var(--dot)}
-#knobs{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 26px}
+#knobs{padding-left:92px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 26px}
 .k label{display:flex;justify-content:space-between;font-style:italic;font-size:15px}
 .k output{font-style:normal;font-variant-numeric:tabular-nums;opacity:.7}
 input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;width:100%;height:24px;margin:0;display:block}
@@ -91,9 +100,12 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radiu
 <body>
 <div class="wrap">
   <header>
-    <div id="scenes" role="group" aria-label="Scene"></div>
-    <div class="tempo"><input id="swing" type="range" min="50" max="72" step="1" aria-label="Swing" style="width:56px"><span id="swingv"></span></div>
-    <div class="tempo"><input id="bpm" type="range" min="110" max="160" step="1" aria-label="Tempo"><span id="bpmv"></span></div>
+    <button id="menuBtn" aria-haspopup="true" aria-expanded="false" aria-controls="menu"></button>
+    <div id="menu" hidden>
+      <div id="scenes" role="group" aria-label="Scene"></div>
+      <div class="tempo"><input id="bpm" type="range" min="110" max="160" step="1" aria-label="Tempo"><span id="bpmv"></span></div>
+      <div class="tempo"><input id="swing" type="range" min="50" max="72" step="1" aria-label="Swing"><span id="swingv"></span></div>
+    </div>
   </header>
   <div id="bars" hidden role="group" aria-label="How many bars in the sequence"><span>sequence</span></div>
   <section id="seq" hidden aria-label="Sequence: which voices play in each bar"></section>
@@ -103,17 +115,18 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radiu
     <div id="plot"><canvas id="cv" tabindex="0" aria-label="Pattern graph. Click to add or remove hits."></canvas></div>
   </main>
 
+  <div id="knobs"></div>
+
   <div class="bar">
     <button id="play" aria-label="Play"><i></i></button>
     <div id="voices" role="group" aria-label="Voice"></div>
+    <div id="presets"></div>
     <span class="sp"></span>
     <button id="new" hidden>new pattern</button>
     <button id="reset" title="forget your changes and load the default patterns and sounds">reset</button>
   </div>
 
-  <div id="presets"></div>
   <div id="formula" aria-live="off"></div>
-  <div id="knobs"></div>
 </div>
 
 <script>
@@ -568,15 +581,16 @@ const TUNES={
   minimal:'- - 0 - - - - 4a - - 0 - - - - -'
 };
 function renderPresets(){
-  let h=sel==='acid'?`<span>synth</span>`+ORDER.map(k=>`<button data-y="${k}" aria-pressed="${P.acid.type===k}">${SYNTHS[k]}</button>`).join('')+'<i class="br"></i>':'';
-  if(sel!=='acid'||!P.acid.type)h+=Object.keys(SOUNDS[sel]).map(k=>`<button data-s="${k}">${k}</button>`).join('');
-  const TT=TUNES;
-  if(MEL(sel))h+=(P.acid.type?'':`<i class="gap"></i>`)+`<span>tune</span>`+Object.keys(TT).map(k=>`<button data-t="${k}">${k}</button>`).join('');
+  const opt=(v,t,on)=>`<option value="${v}"${on?' selected':''}>${t}</option>`;
+  let h='';
+  if(sel==='acid')h+=`<select id="p-synth" aria-label="Synth">`+ORDER.map(k=>opt(k,SYNTHS[k],P.acid.type===k)).join('')+`</select>`;
+  if(sel!=='acid'||!P.acid.type)h+=`<select id="p-sound" aria-label="Sound preset">`+opt('','sound',1)+Object.keys(SOUNDS[sel]).map(k=>opt(k,k)).join('')+`</select>`;
+  if(MEL(sel))h+=`<select id="p-tune" aria-label="Tune">`+opt('','tune',1)+Object.keys(TUNES).map(k=>opt(k,k)).join('')+`</select>`;
   $('presets').innerHTML=h;
-  for(const el of $('presets').querySelectorAll('[data-y]'))el.onclick=()=>{P.acid.type=+el.dataset.y;Object.assign(P.acid,SYN[P.acid.type].set);applyParams();if(ac)N.vca.gain.setTargetAtTime(0,ac.currentTime,.01);select('acid');preview('acid',pat.acid.findIndex(Boolean))};
-  for(const el of $('presets').querySelectorAll('[data-s]'))el.onclick=()=>{Object.assign(P[sel],SOUNDS[sel][el.dataset.s]);select(sel);applyParams();preview(sel,pat[sel].findIndex(Boolean))};
-  for(const el of $('presets').querySelectorAll('[data-t]'))el.onclick=()=>{const v=sel;a(TUNES[el.dataset.t]).forEach((n,i)=>pat[v][i]=n);
-    for(const b of $('presets').querySelectorAll('[data-t]'))b.setAttribute('aria-pressed',b===el)};
+  const on=(id,fn)=>{const el=$(id);if(el)el.onchange=()=>{if(el.value!=='')fn(el.value);el.blur()}};
+  on('p-synth',k=>{P.acid.type=+k;Object.assign(P.acid,SYN[P.acid.type].set);applyParams();if(ac)N.vca.gain.setTargetAtTime(0,ac.currentTime,.01);select('acid');preview('acid',pat.acid.findIndex(Boolean))});
+  on('p-sound',k=>{Object.assign(P[sel],SOUNDS[sel][k]);select(sel);applyParams();preview(sel,pat[sel].findIndex(Boolean));if($('p-sound'))$('p-sound').value=k});
+  on('p-tune',k=>{a(TUNES[k]).forEach((n,i)=>pat.acid[i]=n)});
 }
 
 /* ---------- formula and controls ---------- */
@@ -622,6 +636,7 @@ function setScene(s){
   const st=document.documentElement.style;st.setProperty('--bg',s.bg);st.setProperty('--ink',s.ink);st.setProperty('--dot',s.dot);
   st.setProperty('--faint',s.ink+'99');
   for(const el of $('scenes').children)el.setAttribute('aria-pressed',el.textContent===s.name);
+  $('menuBtn').textContent=s.name+' · '+bpm+' bpm';
   $('bpm').value=bpm;$('bpmv').textContent=bpm+' bpm';$('swing').value=s.swing;$('swingv').textContent='swing '+s.swing+'%';
   applyParams();select(sel);renderSeq();
 }
@@ -642,8 +657,12 @@ $('scenes').innerHTML=SCENES.map(s=>`<button>${s.name}</button>`).join(' ');
 [...$('scenes').children].forEach((el,i)=>el.onclick=()=>setScene(SCENES[i]));
 $('voices').innerHTML=TABS.map(v=>`<button data-v="${v}">${v}</button>`).join(' ');
 for(const el of $('voices').children)el.onclick=()=>select(el.dataset.v);
-$('bpm').oninput=e=>{bpm=scene.bpm=+e.target.value;$('bpmv').textContent=bpm+' bpm';applyParams()};
+$('bpm').oninput=e=>{bpm=scene.bpm=+e.target.value;$('bpmv').textContent=bpm+' bpm';$('menuBtn').textContent=scene.name+' · '+bpm+' bpm';applyParams()};
 $('play').onclick=toggle;
+const menu=open=>{$('menu').hidden=!open;$('menuBtn').setAttribute('aria-expanded',open)};
+$('menuBtn').onclick=()=>menu($('menu').hidden);
+addEventListener('pointerdown',e=>{if(!$('menu').hidden&&!e.target.closest('header'))menu(false)});
+addEventListener('keydown',e=>{if(e.key==='Escape')menu(false)});
 $('swing').oninput=e=>{scene.swing=+e.target.value;$('swingv').textContent='swing '+scene.swing+'%'};
 
 /* autosave: patterns, sounds, sequence and switches stay after a reload */
