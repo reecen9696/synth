@@ -19,7 +19,9 @@ Open `index.html` in a browser, or serve the folder:
    - **Chance** makes a step play only some of the time.
 4. Click an instrument name to open its sound controls, mix controls and live formula. Melodic parts also get a note grid with accent and slide rows.
 5. The **steps** column sets a loop length per instrument. Lengths other than 16 make polymeters.
-6. **Export WAV** renders the current pattern, or the whole song when you are in song mode. **Save**, **Open** and **Share** keep projects. Work is also autosaved in the browser.
+6. **Presets** under each instrument give starting sounds. **Mutate** makes small variations and **Re-roll** makes a new part. Section effects in the song order: filter in/out, build (riser + gap), break, riser, drop gap.
+7. **MIDI** connects a keyboard or pad controller. **● Rec** records what you play while the sequencer runs. **Tap** sets tempo; **humanize** loosens timing.
+8. **Export WAV** renders the current pattern, or the whole song when you are in song mode. **Save**, **Open** and **Share** keep projects. Work is also autosaved in the browser.
 
 ## Instruments
 
