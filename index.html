@@ -118,8 +118,8 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radiu
 
 <script>
 /* ---------- data ---------- */
-const TABS=['kick','bass','clap','hat','open','acid','vox'];
-const BAND={vox:[.02,.17],acid:[.21,.36],open:[.39,.43],hat:[.46,.50],clap:[.53,.58],kick:[.62,.84],bass:[.89,.97]};
+const TABS=['kick','bass','clap','hat','open','acid'];
+const BAND={acid:[.05,.30],open:[.34,.40],hat:[.43,.49],clap:[.52,.58],kick:[.62,.84],bass:[.89,.97]};
 const MODES={phrygian:[0,1,3,5,7,8,10,12],minor:[0,2,3,5,7,8,10,12],dorian:[0,2,3,5,7,9,10,12]};
 const NOTE=['C','C♯','D','E♭','E','F','F♯','G','A♭','A','B♭','B'];
 const hz=m=>440*Math.pow(2,(m-69)/12);       // f = 440 · 2^((n−69)/12)
@@ -131,19 +131,32 @@ const DEF={
   clap:[['tone','tone',600,3000,1100,'Hz'],['decay','decay',.05,.6,.22,'s'],['level','level',0,1,.5,'']],
   hat:[['tone','tone',5000,13000,8500,'Hz'],['decay','decay',.015,.12,.045,'s'],['level','level',0,1,.4,'']],
   open:[['tone','tone',5000,13000,8000,'Hz'],['decay','decay',.1,.8,.3,'s'],['level','level',0,1,.35,'']],
-  acid:[['cut','cutoff',100,2000,360,'Hz'],['res','resonance',.5,24,13,''],['env','env mod',0,5000,2400,'Hz'],['decay','decay',.05,.8,.22,'s'],['level','level',0,1,.5,'']],
-  vox:[['vowel','vowel',0,4,3.6,''],['talk','talk',0,4,0,''],['oct','octave',0,2,0,''],['decay','length',.1,3,2.4,'s'],['level','level',0,1,.6,'']]
+  acid:[['cut','cutoff',100,2000,360,'Hz'],['res','resonance',.5,24,13,''],['env','env mod',0,5000,2400,'Hz'],['decay','decay',.05,.8,.22,'s'],['level','level',0,1,.5,'']]
 };
-/* synths for the acid voice: 0 is the mono TB-303, the rest are polyphonic (chords work) */
-const SYNTHS=['303','fm bell','pluck','stab','supersaw','square'];
+/* Synths for the acid row. Numbers are saved, so the order here never changes; ORDER is what the page shows.
+   oct: octave above the root · chord: one note plays this chord (semitones), the old sampled-chord trick
+   hold: note lasts the whole step (slide ties it into the next) · set: slider values that suit it */
+const SYNTHS=['303','fm bell','pluck','rave stab','supersaw','hoover','dub chord','reese','organ'];
+const ORDER=[0,2,6,3,4,5,7,8,1];
+const SYN={
+  0:{set:{cut:360,res:13,env:2400,decay:.22,level:.5}},
+  1:{oct:8,set:{cut:2000,res:1,env:1800,decay:.5,level:.3}},
+  2:{oct:4,set:{cut:260,res:9,env:3200,decay:.16,level:.5}},
+  3:{oct:4,chord:[0,3,7],set:{cut:700,res:3,env:4200,decay:.2,level:.5}},
+  4:{oct:4,hold:1,set:{cut:1500,res:1,env:2500,decay:.5,level:.5}},
+  5:{oct:4,hold:1,set:{cut:1400,res:2,env:3000,decay:.3,level:.3}},
+  6:{oct:4,chord:[0,3,7,10],set:{cut:320,res:7,env:1500,decay:.4,level:.5}},
+  7:{oct:2,hold:1,set:{cut:420,res:4,env:500,decay:.3,level:.36}},
+  8:{oct:4,hold:1,set:{cut:2000,res:1,env:0,decay:.2,level:.38}}
+};
 const defaults=()=>{const p={};for(const v of TABS){p[v]={};for(const d of DEF[v])p[v][d[0]]=d[4]}p.acid.type=0;return p};
 const degs=s=>s.c&&s.c.length?s.c:[s.d];          // a step can hold a chord
 const clampD=d=>Math.max(0,Math.min(7,d));
-const MEL=v=>v==='acid'||v==='vox';                // voices that play notes
+const MEL=v=>v==='acid';                // voices that play notes
 const ON={};for(const v of TABS)ON[v]=true;       // left switches
-const ROWS=['vox','acid','open','hat','clap','kick','bass']; // top to bottom, same as the graph
+const ROWS=['acid','open','hat','clap','kick','bass']; // top to bottom, same as the graph
 /* Default 16 bar arrangement: intro, groove, full, break, build, drop. */
-const ARR={kick:'xxxxxxxx..xxxxxx',hat:'xxxxxxxxxxxxxxxx',bass:'..xxxxxx..xxxxxx',open:'..xxxxxxxx..xxxx',clap:'....xxxx...xxxxx',acid:'....xxxxxx..xxxx',vox:'xxxxxxxxxxxxxxxx'};
+const ARR={kick:'xxxxxxxx..xxxxxx',hat:'xxxxxxxxxxxxxxxx',bass:'..xxxxxx..xxxxxx',open:'..xxxxxxxx..xxxx',clap:'....xxxx...xxxxx',acid:'....xxxxxx..xxxx'};
 
 const b=s=>[...s].map(c=>c==='x'?1:0);
 const a=s=>s.split(' ').map(t=>t==='-'?null:{d:+t[0],a:t.includes('a'),s:t.includes('s')});
@@ -188,7 +201,7 @@ const SCENES=[
 const PICK={1:[12],2:[4,12],4:[0,4,9,12],8:[0,2,4,6,8,10,12,14],16:[...Array(16).keys()]};
 let nBars=1;   // sequencer hidden for now: loop one bar, every voice plays
 const arrange=s=>{s.arr={};for(const v of TABS)s.arr[v]=PICK[nBars].map(i=>ARR[v][i]==='x'?1:0)};
-for(const s of SCENES){s.pat.vox=s.pat.vox||a('0 - - - - - - - 4 - - - - - - -');s.P=defaults();for(const v in s.set)Object.assign(s.P[v],s.set[v]);arrange(s)}
+for(const s of SCENES){s.P=defaults();for(const v in s.set)Object.assign(s.P[v],s.set[v]);arrange(s)}
 let scene=SCENES[0],pat=scene.pat,P=scene.P,bpm=scene.bpm,sel='kick';
 const SCALE=()=>MODES[scene.mode];
 const ROOT=()=>hz(scene.root);
@@ -229,6 +242,15 @@ function initAudio(){
   N.f1=F('lowpass',400,11);N.f2=F('lowpass',400,.7);N.vca=G(0);N.aLv=G(.5);N.acc=0;
   chain(N.ao,G(.6),N.f1,N.f2,F('highpass',40,.7),as,N.vca,N.aLv,N.duck);const ad=G(.35);N.aLv.connect(ad);ad.connect(N.dSend);
   N.ao.start();
+  // chorus for hoover and supersaw: two short delays, wobbling slowly, left and right
+  N.cho=G(1);
+  for(const [d,r,pan] of [[.012,.6,-.8],[.019,.83,.8]]){
+    const dl=ac.createDelay(.05),lfo=osc('sine',r),lg=G(.003),pn=ac.createStereoPanner();dl.delayTime.value=d;pn.pan.value=pan;
+    chain(lfo,lg,dl.delayTime);chain(N.cho,dl,pn,G(.6),N.duck);lfo.start();
+  }
+  // seven saws that start at different points of their cycle, so a supersaw never begins with a click
+  N.saws=[0,.37,.71,.13,.55,.89,.26].map(ph=>{const n=64,re=new Float32Array(n),im=new Float32Array(n);
+    for(let k=1;k<n;k++){const a=(k%2?1:-1)/k;re[k]=a*Math.sin(k*ph*6.2832);im[k]=a*Math.cos(k*ph*6.2832)}return ac.createPeriodicWave(re,im)});
   applyParams();
 }
 function applyParams(){
@@ -280,7 +302,12 @@ function hat(t,p,open){
 }
 function acid(i,t,sd){
   const s=pat.acid[i];if(!s)return;
-  if(P.acid.type){const ds=degs(s);for(const d of ds)polyNote(t,ROOT()*2*Math.pow(2,SCALE()[d]/12),s.a,sd,ds.length);return}
+  if(P.acid.type){
+    const y=SYN[P.acid.type],base=ROOT()*y.oct,ds=degs(s);
+    // one note on a chord synth plays the whole chord, moved in parallel like a sampled chord
+    const semis=ds.length===1&&y.chord?y.chord.map(c=>SCALE()[s.d]+c):ds.map(d=>SCALE()[d]);
+    const gate=y.hold?sd*(s.s?1.95:.9):0;
+    for(const m of semis)polyNote(t,base*Math.pow(2,m/12),s.a,gate,semis.length);return}
   const p=P.acid,prev=pat.acid[(i+15)%16],next=pat.acid[(i+1)%16],tied=prev&&prev.s;
   const f=ROOT()*2*Math.pow(2,SCALE()[s.d]/12);
   if(tied){N.ao.frequency.cancelScheduledValues(t);N.ao.frequency.setTargetAtTime(f,t,.02)}   // slide: 60 ms glide, no retrigger
@@ -295,47 +322,54 @@ function acid(i,t,sd){
   if(!(s.s&&next))N.vca.gain.setTargetAtTime(0,t+sd*.55,.012);
 }
 const osc=(type,f)=>{const o=ac.createOscillator();o.type=type;o.frequency.value=f;return o};
-// polyphonic synth note. Shared sliders: cutoff, resonance, env mod (FM: index), decay, level
-function polyNote(t,f,acc,sd,n){
-  const p=P.acid,type=p.type,g=G(0),lv=G(p.level*(acc?1:.72)/Math.sqrt(n)),dur=p.decay*1.8+.1,end=t+dur+(type===5?sd:0);
-  const fl=F('lowpass',p.cut,Math.min(p.res,14)*.45+.5),peak=Math.min(14000,p.cut+p.env*(acc?1.5:1));
-  fl.frequency.setValueAtTime(peak,t);fl.frequency.setTargetAtTime(p.cut,t,(type===2?p.decay/8:p.decay/4));
-  const srcs=[];
-  if(type===1){                        // FM bell: carrier f, modulator 3.5f, index decays
-    const c=osc('sine',f),m=osc('sine',f*3.5),mg=G(0);mg.gain.setValueAtTime(f*3.5*p.env/600,t);mg.gain.setTargetAtTime(0,t,p.decay/3);
-    chain(m,mg,c.frequency);c.connect(g);srcs.push(c,m);
-  }else if(type===4){                  // supersaw: seven detuned saws (JP-8000 offsets)
-    for(const o of [-.11,-.063,-.0195,0,.0199,.062,.107]){const x=osc('sawtooth',f*(1+o*.18));x.connect(fl);srcs.push(x)}fl.connect(g);
-  }else if(type===5){                  // square lead with delayed vibrato
-    const x=osc('square',f),vib=osc('sine',5.5),vg=G(0);vg.gain.setValueAtTime(0,t);vg.gain.linearRampToValueAtTime(f*.012,t+.15);
-    chain(vib,vg,x.frequency);x.connect(fl);fl.connect(g);srcs.push(x,vib);
-  }else{                               // pluck (one saw) or stab (two saws ±9 cents)
-    for(const c of type===3?[-9,9]:[0]){const x=osc('sawtooth',f);x.detune.value=c;x.connect(fl);srcs.push(x)}fl.connect(g);
+/* One note of a polyphonic synth. Sliders: cutoff, resonance, env mod, decay, level.
+   gate > 0 means the note is held that long, then released. */
+function polyNote(t,f,acc,gate,n){
+  const p=P.acid,type=p.type,g=G(0),lv=G(p.level*(acc?1:.7)/Math.sqrt(n)),tail=p.decay*2+.15,end=t+gate+tail;
+  const fl=F('lowpass',p.cut,Math.min(p.res,14)*.45+.5),peak=Math.min(15000,p.cut+p.env*(acc?1.5:1));
+  const src=[],add=(o,gain,to)=>{src.push(o);if(gain!=null){const og=G(gain);o.connect(og);og.connect(to||fl)}return o};
+  const saw=(fr,cents,gain)=>{const o=osc('sawtooth',fr);o.detune.value=cents;return add(o,gain)};
+  let out=fl,dly=.3,rev=0,cho=0,atk=.003;
+  fl.frequency.setValueAtTime(peak,t);fl.frequency.setTargetAtTime(p.cut,t,p.decay/4);
+  if(type===1){                 // FM bell (Chowning): carrier f, modulator 3.5f, brightness dies with the note. Two copies 6 cents apart shimmer.
+    out=G(1);
+    for(const c of [-3,3]){const car=osc('sine',f),mod=osc('sine',f*3.5),mg=G(0);car.detune.value=c;mod.detune.value=c;
+      mg.gain.setValueAtTime(f*3.5*p.env/600,t);mg.gain.setTargetAtTime(f*.3,t,p.decay/3);chain(mod,mg,car.frequency);add(mod);add(car,.5,out)}
+    dly=.35;rev=.4;
+  }else if(type===2){           // pluck: saw plus a square an octave down, filter snaps shut
+    saw(f,0,.6);add(osc('square',f/2),.35);
+    fl.frequency.cancelScheduledValues(t);fl.frequency.setValueAtTime(peak,t);fl.frequency.setTargetAtTime(p.cut,t,p.decay/9);
+  }else if(type===3){           // rave stab: bright detuned saws and a square, short and loud
+    saw(f,-14,.4);saw(f,14,.4);add(osc('square',f),.25);rev=.35;dly=.25;
+  }else if(type===4){           // supersaw (JP-8000, Szabo's detune table): 7 saws, spread left to right, highpassed at the note
+    const hp=F('highpass',f*.9,.7),OFF=[-.11002,-.06288,-.01952,0,.01991,.06217,.10745];
+    OFF.forEach((o,k)=>{const x=osc('sine',f*(1+o*.22)),pn=ac.createStereoPanner();x.setPeriodicWave(N.saws[k]);pn.pan.value=o*7;
+      src.push(x);chain(x,G(k===3?.5:.34),pn,hp)});
+    hp.connect(fl);atk=.02;rev=.45;dly=.3;cho=.3;
+  }else if(type===5){           // hoover (Alpha Juno "What the?"): three octaves of detuned saws that swoop up into the note, heavy chorus
+    const os=[];for(const [m,gn] of [[.5,.35],[1,.35],[2,.18]])for(const c of [-18,18])os.push([saw(f*m,c,gn),c]);
+    os.push([add(osc('square',f),.2),0]);
+    const lfo=add(osc('sine',6)),lg=G(14);lfo.connect(lg);
+    for(const [o,c] of os){lg.connect(o.detune);o.detune.setValueAtTime(c-1200,t);o.detune.setTargetAtTime(c,t,.045);o.detune.setTargetAtTime(c-700,t+gate,.12)}
+    atk=.01;cho=1;rev=.3;dly=.2;
+  }else if(type===6){           // dub chord (Basic Channel): soft detuned saws, filter opens a moment late, then into the echo
+    saw(f,-7,.4);saw(f,7,.4);
+    fl.frequency.cancelScheduledValues(t);fl.frequency.setValueAtTime(p.cut,t);fl.frequency.linearRampToValueAtTime(peak,t+.04);fl.frequency.setTargetAtTime(p.cut,t+.04,p.decay/3);
+    out=F('highpass',220,.7);fl.connect(out);dly=.7;rev=.6;
+  }else if(type===7){           // reese: two saws 50 cents apart beat against each other, sine sub underneath
+    saw(f,-25,.45);saw(f,25,.45);add(osc('sine',f/2),.5,g);dly=0;
+    fl.frequency.cancelScheduledValues(t);fl.frequency.setValueAtTime(p.cut,t);fl.frequency.linearRampToValueAtTime(p.cut+p.env,t+gate*.5+.05);fl.frequency.setTargetAtTime(p.cut,t+gate*.5+.05,.1);
+  }else{                        // organ (M1 house organ): four sine drawbars and a key click
+    out=G(1);[[1,.5],[2,.35],[3,.14],[4,.1]].forEach(([h,gn])=>add(osc('sine',f*h),gn,out));
+    const ck=add(osc('sine',f*6)),cg=G(0);cg.gain.setValueAtTime(.25,t);cg.gain.setTargetAtTime(0,t,.006);chain(ck,cg,out);dly=.2;rev=.15;
   }
-  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(1,t+.003);
-  if(type===5){g.gain.setValueAtTime(1,t+sd*.9);g.gain.setTargetAtTime(0,t+sd*.9,p.decay/4)}else g.gain.setTargetAtTime(0,t+.004,p.decay/4);
-  chain(g,lv,N.duck);const ds=G(.3);lv.connect(ds);ds.connect(N.dSend);
-  for(const x of srcs){x.start(t);x.stop(end)}
-}
-/* vox: a saw (plus a detuned twin) through three vowel formant filters.
-   Formants F1–F3 for a e i o u, adult male (Peterson & Barney 1952). talk sweeps the vowel during the note. */
-const VOWELS=[[730,1090,2440],[530,1840,2480],[270,2290,3010],[570,840,2410],[300,870,2240]];
-const FBW=[90,110,170],FG=[1,.55,.3];
-const formants=v=>{v=Math.max(0,Math.min(4,v));const i=Math.min(3,Math.floor(v)),k=v-i;return VOWELS[i].map((f,j)=>f+(VOWELS[i+1][j]-f)*k)};
-function vox(i,t,sd){
-  const s=pat.vox[i];if(!s)return;const ds=degs(s);for(const d of ds)voxNote(t,d,s.a?1.3:1,ds.length);
-}
-function voxNote(t,deg,acc,n){
-  const p=P.vox,f=ROOT()*Math.pow(2,(SCALE()[deg]+12*(Math.round(p.oct)+1))/12),dur=p.decay;
-  const v0=p.vowel,v1=v0+p.talk<=4?v0+p.talk:Math.max(0,v0-p.talk),F0=formants(v0),F1=formants(v1);
-  const src=G(.5),g=G(0),lv=G(p.level*acc/Math.sqrt(n));
-  const a=osc('sawtooth',f),b2=osc('sawtooth',f);b2.detune.value=7;
-  const vib=osc('sine',5.2),vg=G(0);vg.gain.setValueAtTime(0,t);vg.gain.linearRampToValueAtTime(f*(dur>.8?.005:.012),t+dur*.6);chain(vib,vg,a.frequency);vg.connect(b2.frequency);
-  a.connect(src);b2.connect(src);
-  for(let k=0;k<3;k++){const bp=F('bandpass',F0[k],F0[k]/FBW[k]);bp.frequency.setValueAtTime(F0[k],t);bp.frequency.linearRampToValueAtTime(F1[k],t+dur);chain(src,bp,G(FG[k]*3.5),g)}
-  const atk=Math.min(.25,Math.max(.015,dur*.1));g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(1,t+atk);g.gain.setTargetAtTime(0,t+dur*.75,dur*.12);
-  chain(g,lv,N.duck);const rv=G(.35);lv.connect(rv);rv.connect(N.vSend);const dl=G(.25);lv.connect(dl);dl.connect(N.dSend);
-  for(const x of [a,b2,vib]){x.start(t);x.stop(t+dur*1.6+.1)}
+  if(out!==fl||type===6)out.connect(g);else fl.connect(g);
+  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(1,t+atk);
+  if(gate){g.gain.setTargetAtTime(.8,t+atk,.08);g.gain.setTargetAtTime(0,t+gate,type===8?.012:p.decay/5)}
+  else g.gain.setTargetAtTime(0,t+atk,type===1?p.decay/2:p.decay/4);
+  chain(g,lv,N.duck);
+  for(const [amt,to] of [[dly,N.dSend],[rev,N.vSend],[cho,N.cho]])if(amt){const x=G(amt);lv.connect(x);x.connect(to)}
+  for(const x of src){x.start(t);x.stop(end)}
 }
 const live=(v,bar)=>ON[v]&&!!scene.arr[v][bar%nBars];   // a voice sounds if its switch is on and its bar is lit
 function fire(i,t,bar){
@@ -346,7 +380,6 @@ function fire(i,t,bar){
   if(pat.hat[i]&&live('hat',bar))hat(t,P.hat,false);
   if(pat.open[i]&&live('open',bar))hat(t,P.open,true);
   if(live('acid',bar))acid(i,t,sd);
-  if(live('vox',bar))vox(i,t,sd);
 }
 
 /* ---------- clock: schedule 100 ms ahead on the audio clock, poll every 25 ms ----------
@@ -410,9 +443,8 @@ function draw(){
         cx.moveTo(x,top);cx.lineTo(x+sw*.35,top);cx.lineTo(x+sw*.6,bot);cx.lineTo(x+sw*(.6+Math.min(P.clap.decay/sd,1)*.35),bot);
       }else{
         const nx=pat[v][(i+1)%16],ny=d=>noteY(v,d);cx.lineWidth=s.a?4.2:2;
-        const len=v==='vox'?Math.min(P.vox.decay/sd,8,16-i):.62;
+        const len=s.s&&SYN[P.acid.type]&&SYN[P.acid.type].hold?1:.62;
         for(const d of degs(s)){const y=ny(d);cx.moveTo(x,y);cx.lineTo(x+sw*len,y)}
-        if(v==='vox'){cx.font='italic 12px "STIX Two Text",Times,serif';cx.fillText('aeiou'[Math.round(P.vox.vowel)],x-1,ny(s.d)-5)}
         const y=ny(s.d);if(s.s&&nx&&i<15){cx.moveTo(x+sw*.62,y);cx.lineTo(x+sw,ny(nx.d))}else if(s.s){cx.moveTo(x+sw*.62,y);cx.lineTo(x+sw*.95,y)}
       }
       cx.stroke();
@@ -461,7 +493,7 @@ function hit(e){
 }
 function preview(v,i){
   if(!ac||playing)return;const t=ac.currentTime+.01;ac.resume();
-  ({kick,bass,clap,hat:t=>hat(t,P.hat,false),open:t=>hat(t,P.open,true),vox:t=>vox(i,t,60/bpm/4),acid:t=>{acid(i,t,60/bpm/4);N.vca.gain.setTargetAtTime(0,t+.25,.012)}})[v](t);
+  ({kick,bass,clap,hat:t=>hat(t,P.hat,false),open:t=>hat(t,P.open,true),acid:t=>{acid(i,t,60/bpm/4);N.vca.gain.setTargetAtTime(0,t+.25,.012)}})[v](t);
 }
 cv.addEventListener('contextmenu',e=>e.preventDefault());
 cv.addEventListener('pointerdown',e=>{
@@ -522,7 +554,6 @@ const SOUNDS={
   clap:{'909':{tone:1100,decay:.22},'tight':{tone:1500,decay:.1},'big':{tone:950,decay:.5}},
   hat:{'808':{tone:8500,decay:.045},'bright':{tone:11500,decay:.035},'dark':{tone:6000,decay:.06}},
   open:{'short':{tone:9000,decay:.15},'808':{tone:8000,decay:.3},'long':{tone:9000,decay:.7}},
-  vox:{'deep':{vowel:3.6,talk:0,oct:0,decay:2.4,level:.6},'monk':{vowel:3,talk:.3,oct:0,decay:1.4},'choir':{vowel:3,talk:.4,oct:1,decay:1.2},'robot':{vowel:0,talk:0,oct:1,decay:.25},'yoy':{vowel:4,talk:3,oct:1,decay:.35},'wah':{vowel:4,talk:4,oct:0,decay:.3}},
   acid:{'classic':{cut:360,res:13,env:2400,decay:.22},'squelch':{cut:250,res:20,env:4000,decay:.35},'mellow':{cut:500,res:6,env:1200,decay:.3},'screaming':{cut:700,res:24,env:5000,decay:.45},'dark':{cut:150,res:16,env:1500,decay:.15}}
 };
 const TUNES={
@@ -536,24 +567,15 @@ const TUNES={
   octaves:'0 7 0 7a 0 7 0 7s 0 7 0 7a 3 7 4 7s',
   minimal:'- - 0 - - - - 4a - - 0 - - - - -'
 };
-/* vox tunes: few long notes, mostly root (0) and fifth (4) */
-const VOXTUNES={
-  drone:'0 - - - - - - - - - - - - - - -',
-  'root fifth':'0 - - - - - - - 4 - - - - - - -',
-  chant:'0 - - - 0 - - - 3 - - - 0 - - -',
-  call:'- - - - 0 - - - - - - - 4 - - -',
-  rise:'0 - - - - - - - 2 - - - 4 - - -',
-  low:'- - - - - - - - 0 - - - - - - -'
-};
 function renderPresets(){
-  let h=sel==='acid'?`<span>synth</span>`+SYNTHS.map((n,k)=>`<button data-y="${k}" aria-pressed="${P.acid.type===k}">${n}</button>`).join('')+'<i class="br"></i>':'';
-  h+=Object.keys(SOUNDS[sel]).map(k=>`<button data-s="${k}">${k}</button>`).join('');
-  const TT=sel==='vox'?VOXTUNES:TUNES;
-  if(MEL(sel))h+=`<i class="gap"></i><span>tune</span>`+Object.keys(TT).map(k=>`<button data-t="${k}">${k}</button>`).join('');
+  let h=sel==='acid'?`<span>synth</span>`+ORDER.map(k=>`<button data-y="${k}" aria-pressed="${P.acid.type===k}">${SYNTHS[k]}</button>`).join('')+'<i class="br"></i>':'';
+  if(sel!=='acid'||!P.acid.type)h+=Object.keys(SOUNDS[sel]).map(k=>`<button data-s="${k}">${k}</button>`).join('');
+  const TT=TUNES;
+  if(MEL(sel))h+=(P.acid.type?'':`<i class="gap"></i>`)+`<span>tune</span>`+Object.keys(TT).map(k=>`<button data-t="${k}">${k}</button>`).join('');
   $('presets').innerHTML=h;
-  for(const el of $('presets').querySelectorAll('[data-y]'))el.onclick=()=>{P.acid.type=+el.dataset.y;if(ac)N.vca.gain.setTargetAtTime(0,ac.currentTime,.01);select('acid');preview('acid',pat.acid.findIndex(Boolean))};
+  for(const el of $('presets').querySelectorAll('[data-y]'))el.onclick=()=>{P.acid.type=+el.dataset.y;Object.assign(P.acid,SYN[P.acid.type].set);applyParams();if(ac)N.vca.gain.setTargetAtTime(0,ac.currentTime,.01);select('acid');preview('acid',pat.acid.findIndex(Boolean))};
   for(const el of $('presets').querySelectorAll('[data-s]'))el.onclick=()=>{Object.assign(P[sel],SOUNDS[sel][el.dataset.s]);select(sel);applyParams();preview(sel,pat[sel].findIndex(Boolean))};
-  for(const el of $('presets').querySelectorAll('[data-t]'))el.onclick=()=>{const v=sel;a((v==='vox'?VOXTUNES:TUNES)[el.dataset.t]).forEach((n,i)=>pat[v][i]=n);
+  for(const el of $('presets').querySelectorAll('[data-t]'))el.onclick=()=>{const v=sel;a(TUNES[el.dataset.t]).forEach((n,i)=>pat[v][i]=n);
     for(const b of $('presets').querySelectorAll('[data-t]'))b.setAttribute('aria-pressed',b===el)};
 }
 
@@ -565,28 +587,32 @@ const FORM={
   bass:p=>`<i>y</i> = lp<sub>${fmt(p.cut)}</sub>(saw(${fmt(ROOT())}<i>t</i>)) · <i>e</i><sup>−3<i>t</i>/${fmt(p.decay)}</sup> · (1 − 0.85 kick)`,
   clap:p=>`<i>y</i> = bp<sub>${fmt(p.tone)}</sub>(noise) · [ Σ<sub><i>k</i>=0..3</sub> (1 − (<i>t</i> − 0.011<i>k</i>)/0.009)<sub>+</sub> + 0.75<i>e</i><sup>−5(<i>t</i>−0.034)/${fmt(p.decay)}</sup> ]`,
   hat:p=>`<i>y</i> = hp( bp<sub>${fmt(p.tone*.835)}</sub>(<i>m</i>) + ¼ bp<sub>3440</sub>(<i>m</i>) ) · <i>e</i><sup>−5<i>t</i>/${fmt(p.decay)}</sup> ,&emsp;<i>m</i> = Σ<sub><i>k</i>=1..6</sub> sq(<i>f<sub>k</sub>t</i>) ,&emsp;<i>f</i> = 205, 304, 370, 523, 540, 800`,
-  vox:p=>{const F0=formants(p.vowel).map(Math.round);return `<i>y</i> = Σ<sub><i>k</i>=1..3</sub> <i>g<sub>k</sub></i> · bp<sub><i>F<sub>k</sub></i>(<i>v</i>)</sub>(saw(<i>f</i>) + saw(<i>f</i>·2<sup>7/1200</sup>)) · env ,&emsp;<i>F</i>(${'aeiou'[Math.round(p.vowel)]}) = ${F0.join(', ')} Hz ,&emsp;<i>v</i>(<i>t</i>) = ${fmt(p.vowel)} → ${fmt(p.vowel+p.talk<=4?p.vowel+p.talk:Math.max(0,p.vowel-p.talk))}`},
   acid:p=>p.type?SYNTHF[p.type](p):`<i>y</i> = lp<sup>4</sup><sub><i>c</i>(<i>t</i>)</sub>(saw(${fmt(ROOT()*2)} · 2<sup>${fr('<i>n</i>','12')}</sup><i>t</i>)) ,&emsp;<i>c</i>(<i>t</i>) = ${fmt(p.cut)} + ${fmt(p.env)}<i>e</i><sup>−3<i>t</i>/${fmt(p.decay)}</sup> ,&emsp;<i>Q</i> = ${fmt(p.res)}`
 };
 FORM.open=FORM.hat;
 const env=p=>`<i>e</i><sup>−4<i>t</i>/${fmt(p.decay)}</sup>`;
+const lpc=p=>`lp<sub>${fmt(p.cut)} + ${fmt(p.env)}<i>e</i><sup>−4<i>t</i>/${fmt(p.decay)}</sup></sub>`;
+const cents=c=>`2<sup>${c}/1200</sup>`;
 const SYNTHF={
-  1:p=>`<i>y</i> = Σ<sub>notes</sub> sin(2π<i>ft</i> + <i>I</i>(<i>t</i>) sin(2π·3.5<i>ft</i>)) · ${env(p)} ,&emsp;<i>I</i>(<i>t</i>) = ${fmt(p.env/600)}<i>e</i><sup>−3<i>t</i>/${fmt(p.decay)}</sup>`,
-  2:p=>`<i>y</i> = Σ<sub>notes</sub> lp<sub>${fmt(p.cut)} + ${fmt(p.env)}<i>e</i><sup>−8<i>t</i>/${fmt(p.decay)}</sup></sub>(saw(<i>f</i>)) · ${env(p)}`,
-  3:p=>`<i>y</i> = Σ<sub>notes</sub> lp<sub><i>c</i>(<i>t</i>)</sub>(saw(<i>f</i>·2<sup>−9/1200</sup>) + saw(<i>f</i>·2<sup>9/1200</sup>)) · ${env(p)} ,&emsp;<i>c</i>(<i>t</i>) = ${fmt(p.cut)} + ${fmt(p.env)}<i>e</i><sup>−4<i>t</i>/${fmt(p.decay)}</sup>`,
-  4:p=>`<i>y</i> = Σ<sub>notes</sub> lp<sub><i>c</i>(<i>t</i>)</sub>( Σ<sub><i>k</i>=1..7</sub> saw(<i>f</i>(1 + 0.18<i>o<sub>k</sub></i>)) ) · ${env(p)} ,&emsp;<i>o</i> = 0, ±0.02, ±0.06, ±0.11`,
-  5:p=>`<i>y</i> = Σ<sub>notes</sub> lp<sub>${fmt(p.cut)}</sub>(sq(<i>f</i>(1 + 0.012 sin 2π·5.5<i>t</i>))) · gate`
+  1:p=>`<i>y</i> = sin(2π<i>ft</i> + <i>I</i>(<i>t</i>) sin(2π·3.5<i>ft</i>)) · <i>e</i><sup>−2<i>t</i>/${fmt(p.decay)}</sup> ,&emsp;<i>I</i>(<i>t</i>) = ${fmt(p.env/600)}<i>e</i><sup>−3<i>t</i>/${fmt(p.decay)}</sup>`,
+  2:p=>`<i>y</i> = lp<sub>${fmt(p.cut)} + ${fmt(p.env)}<i>e</i><sup>−9<i>t</i>/${fmt(p.decay)}</sup></sub>(saw(<i>f</i>) + ½ sq(<i>f</i>/2)) · ${env(p)}`,
+  3:p=>`<i>y</i> = Σ<sub><i>n</i> ∈ {0,3,7}</sub> ${lpc(p)}(saw(<i>f<sub>n</sub></i>·${cents('±14')}) + ½ sq(<i>f<sub>n</sub></i>)) · ${env(p)} ,&emsp;<i>f<sub>n</sub></i> = <i>f</i>·2<sup><i>n</i>/12</sup>`,
+  4:p=>`<i>y</i> = ${lpc(p)}( hp<sub><i>f</i></sub> Σ<sub><i>k</i>=1..7</sub> saw(<i>f</i>(1 + 0.22<i>o<sub>k</sub></i>)) ) ,&emsp;<i>o</i> = 0, ±0.0195, ±0.0629, ±0.1100`,
+  5:p=>`<i>y</i> = chorus( ${lpc(p)}( Σ<sub><i>m</i> ∈ {½,1,2}</sub> saw(<i>m f</i>·${cents('±18')}·<i>g</i>(<i>t</i>)) ) ) ,&emsp;<i>g</i>(<i>t</i>) = 2<sup>−<i>e</i><sup>−<i>t</i>/0.045</sup></sup>`,
+  6:p=>`<i>y</i> = echo( hp<sub>220</sub> Σ<sub><i>n</i> ∈ {0,3,7,10}</sub> lp<sub><i>c</i>(<i>t</i>)</sub>(saw(<i>f<sub>n</sub></i>·${cents('±7')})) · <i>e</i><sup>−5<i>t</i>/${fmt(p.decay)}</sup> ) ,&emsp;<i>c</i> = ${fmt(p.cut)} → ${fmt(p.cut+p.env)} → ${fmt(p.cut)}`,
+  7:p=>`<i>y</i> = lp<sub>${fmt(p.cut)}</sub>(saw(<i>f</i>·${cents('−25')}) + saw(<i>f</i>·${cents('+25')})) + ½ sin(2π·<i>f</i>/2·<i>t</i>) ,&emsp;beat = ${fmt(ROOT()*2*(Math.pow(2,25/1200)-Math.pow(2,-25/1200)))} Hz`,
+  8:p=>`<i>y</i> = 0.5 sin(2π<i>ft</i>) + 0.35 sin(2π·2<i>ft</i>) + 0.14 sin(2π·3<i>ft</i>) + 0.1 sin(2π·4<i>ft</i>) + click`
 };
 const KEYS='asdfghjk';                    // computer keyboard → scale degrees 0–7
 let kc=0;                                 // the step the keys write to
-const keyVoice=()=>MEL(sel)&&ON[sel]?sel:ON.acid?'acid':ON.vox?'vox':null;
+const keyVoice=()=>ON.acid?'acid':null;
 const $=id=>document.getElementById(id);
 function formula(){$('formula').innerHTML=FORM[sel](P[sel])}
 function select(v){
   sel=v;
   for(const el of $('voices').children)el.setAttribute('aria-pressed',el.dataset.v===v);
   for(const el of $('side').children)el.classList.toggle('sel',el.dataset.v===v);
-  const show=(k,x)=>k==='vowel'?'aeiou'[Math.round(x)]:k==='oct'?Math.round(x):fmt(x);
+  const show=(k,x)=>fmt(x);
   $('knobs').innerHTML=DEF[v].map(d=>`<div class="k"><label for="k-${d[0]}">${d[1]}<output id="o-${d[0]}">${show(d[0],P[v][d[0]])} ${d[5]}</output></label><input id="k-${d[0]}" type="range" min="${d[2]}" max="${d[3]}" step="${(d[3]-d[2])/200}" value="${P[v][d[0]]}"></div>`).join('');
   for(const d of DEF[v])$('k-'+d[0]).oninput=e=>{P[v][d[0]]=+e.target.value;$('o-'+d[0]).textContent=show(d[0],P[v][d[0]])+' '+d[5];formula();applyParams()};
   formula();renderPresets();
@@ -628,7 +654,6 @@ function load(){
     const d=JSON.parse(localStorage.getItem(KEY));if(!d||d.v!==2)return 0;
     Object.assign(ON,d.ON);if(DEF[d.sel])sel=d.sel;
     d.scenes.forEach((x,i)=>{const s=SCENES[i];if(!s||!x)return;
-      if(x.pat&&x.pat.vox&&x.pat.vox.some(n=>typeof n==='number')){x.pat.vox=x.pat.vox.map(n=>n?{d:4,a:false,s:false}:null);if(x.arr)delete x.arr.vox}
       for(const v of TABS){if(x.pat&&Array.isArray(x.pat[v])&&x.pat[v].length===16)s.pat[v]=x.pat[v];if(x.P&&x.P[v])Object.assign(s.P[v],x.P[v]);s.arr[v]=PICK[nBars].map(k=>ARR[v][k]==='x'?1:0)}
       s.bpm=x.bpm||s.bpm;s.swing=x.swing||s.swing});
     for(const el of $('side').children)el.setAttribute('aria-pressed',ON[el.dataset.v]);
