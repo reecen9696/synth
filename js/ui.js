@@ -503,6 +503,47 @@ var TS = window.TS = window.TS || {};
   $('undo').onclick = () => { if (!undo.length) return; redo.push(JSON.stringify(S)); restore(undo.pop()); changed(); };
   $('redo').onclick = () => { if (!redo.length) return; undo.push(JSON.stringify(S)); restore(redo.pop()); changed(); };
 
+  /* ---------------- MIDI input ---------------- */
+  const GM = { 35: 'kick', 36: 'kick', 37: 'rim', 38: 'snare', 40: 'snare', 39: 'clap', 42: 'chat', 44: 'chat', 46: 'ohat', 51: 'ride', 59: 'ride', 53: 'ride', 41: 'tom', 43: 'tom', 45: 'tom', 47: 'tom', 48: 'tom', 50: 'tom', 62: 'tom', 63: 'tom', 64: 'tom', 56: 'cow', 69: 'shaker', 70: 'shaker', 82: 'shaker' };
+  let rec = false;
+  /* nearest scale degree to a MIDI note for this track */
+  function degFor(id, note) {
+    let best = 0, bd = 1e9;
+    for (let d = -7; d <= 28; d++) { const m = TS.degMidi(S, id, d), dist = Math.abs(m - note); if (dist < bd) { bd = dist; best = d; } }
+    return best;
+  }
+  function onMidi(e) {
+    const [st, note, velo] = e.data, cmd = st & 0xf0;
+    if (cmd !== 0x90 || !velo) return;
+    const melodic = TS.MELODIC.has(sel), id = melodic ? sel : GM[note];
+    if (!id) return;
+    const val = melodic ? { d: degFor(id, note), a: velo > 100, s: false } : (velo > 100 ? 2 : 1);
+    if (rec && TS.Seq.playing) {
+      // quantise to the nearest step of the pattern that is playing
+      const q = TS.Seq.now(); if (!q) return;
+      const sd = 60 / S.bpm / 4, late = TS.E.ac.currentTime - q.t > sd / 2, len = S.tracks[id].len;
+      const i = (q.abs + (late ? 1 : 0)) % len, pat = S.pats[q.pat];
+      if (!pat[id][i]) undo.push(JSON.stringify(S));
+      pat[id][i] = val;
+      if (q.pat === S.cur) { updCell(id, i); if (sel === id) renderRoll(); }
+      changed(false);
+    }
+    // always monitor what was played: the recorded step itself sounds from the next loop
+    const E = audio(), t = E.ac.currentTime, tr = S.tracks[id], sd = 60 / S.bpm / 4;
+    if (melodic) TS.VOICES[id].play(E, t, { d: val.d, a: val.a, s: false, midi: TS.degMidi(S, id, val.d) }, tr.p, E.ch[id].in, sd);
+    else TS.VOICES[id].play(E, t, { v: val }, tr.p, E.ch[id].in, sd);
+  }
+  $('midi').onclick = async () => {
+    if (!navigator.requestMIDIAccess) return toast('This browser has no Web MIDI (try Chrome or Edge)');
+    try {
+      const m = await navigator.requestMIDIAccess();
+      const hook = () => { let n = 0; for (const inp of m.inputs.values()) { inp.onmidimessage = onMidi; n++; } $('midi').textContent = n ? `MIDI · ${n}` : 'MIDI'; return n; };
+      m.onstatechange = hook;
+      const n = hook(); toast(n ? `MIDI connected: ${n} input${n > 1 ? 's' : ''}` : 'No MIDI devices found. Plug one in.');
+    } catch (err) { toast('MIDI blocked: ' + err.message); }
+  };
+  $('rec').onclick = () => { rec = !rec; $('rec').setAttribute('aria-pressed', rec); toast(rec ? 'Recording: play notes while the sequencer runs' : 'Recording off'); };
+
   /* ---------------- help, hints, toast, keys ---------------- */
   $('helpBtn').onclick = () => { $('help').hidden = false; };
   $('helpClose').onclick = () => { $('help').hidden = true; };
@@ -528,7 +569,7 @@ var TS = window.TS = window.TS || {};
   });
 
   function renderAll() { renderHeader(); renderPats(); renderSong(); renderGrid(); renderTrack(); renderMaster(); }
-  TS.ui = { renderAll, toast, get state() { return S; } };
+  TS.ui = { renderAll, toast, midi: onMidi, get state() { return S; } };
   renderAll();
   requestAnimationFrame(frame);
   if (!localStorage.getItem('technosynth-seen')) { $('help').hidden = false; localStorage.setItem('technosynth-seen', '1'); }

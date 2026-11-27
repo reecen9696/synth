@@ -24,6 +24,8 @@
   <div class="tools">
     <button id="undo" data-help="Undo (Ctrl/Cmd+Z)." title="Undo">↶</button>
     <button id="redo" data-help="Redo (Shift+Ctrl/Cmd+Z)." title="Redo">↷</button>
+    <button id="midi" data-help="Connect a MIDI keyboard or pad controller. Notes play the selected synth; with a drum selected, pads follow the General MIDI drum map (36 kick, 38 snare, 42 hat...).">MIDI</button>
+    <button id="rec" data-help="Live record: while playing, MIDI notes are written into the pattern at the nearest step." aria-pressed="false">● Rec</button>
     <button id="save" data-help="Download this project as a .json file.">Save</button>
     <button id="open" data-help="Open a saved .json project.">Open</button>
     <button id="share" data-help="Copy a link that contains the whole project.">Share</button>
@@ -105,6 +107,7 @@
       <li><b>Click does</b> above the grid switches what a click means: draw, accent, ratchet (2–4 fast hits in one step) or chance (the step only plays sometimes).</li>
       <li><b>M</b> mutes, <b>S</b> solos. The steps number sets the loop length per track; odd lengths against 16 make polymeters.</li>
       <li>The <b>Master</b> filter is for live sweeps. <b>Export WAV</b> renders audio.</li>
+      <li><b>MIDI</b> connects a keyboard or pad controller. Turn on <b>● Rec</b> while playing to record what you play into the pattern.</li>
     </ol>
     <h3>Keys</h3>
     <p><kbd>Space</kbd> play · <kbd>1</kbd>–<kbd>8</kbd> pattern · <kbd>Ctrl/Cmd+Z</kbd> undo · <kbd>↑</kbd><kbd>↓</kbd> select instrument · <kbd>M</kbd> mute selected · <kbd>S</kbd> solo selected · <kbd>R</kbd> re-roll selected track · <kbd>Esc</kbd> close</p>
