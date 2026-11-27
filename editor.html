@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Track editor · Techno Function Synth</title>
+<style>
+/* Same look as the synth: one flat colour, ink lines, one dot for time. */
+:root{--bg:#e8334f;--ink:#1a0508;--dot:#f4e9d0;--font:"STIX Two Text","Times New Roman",Times,serif;color-scheme:light}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:17px}
+.wrap{max-width:1180px;margin:0 auto;padding:18px 22px 30px;display:flex;flex-direction:column;gap:16px}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 20px}
+.sp{flex:1}
+a{color:inherit;text-underline-offset:4px;opacity:.75}a:hover{opacity:1}
+button{font:inherit;color:inherit;background:none;border:0;padding:4px 2px;cursor:pointer;opacity:.6}
+button:hover{opacity:1}
+button:disabled{opacity:.2;cursor:default}
+button:focus-visible,canvas:focus-visible{outline:1.5px dashed var(--ink);outline-offset:3px}
+kbd{font:inherit;font-size:.72em;border:1px solid var(--ink);border-radius:3px;padding:0 4px;margin-left:5px;opacity:.6}
+h2{font-size:15px;font-weight:400;font-style:italic;opacity:.6;margin:0}
+#play{width:46px;height:46px;border-radius:50%;background:var(--dot);opacity:1;padding:0;display:grid;place-items:center;flex:none}
+#play i{display:block;width:0;height:0;border-left:14px solid var(--bg);border-top:9px solid transparent;border-bottom:9px solid transparent;margin-left:4px}
+#play.on i{width:14px;height:14px;border:0;background:var(--bg);margin:0}
+#wave{width:100%;height:220px;display:block;cursor:crosshair;touch-action:none;border-top:1.5px solid var(--ink);border-bottom:1.5px solid var(--ink)}
+#time{font-variant-numeric:tabular-nums}
+#time b{font-weight:400;opacity:.6;font-style:italic;margin-right:4px}
+#time span{margin-right:18px}
+/* files */
+#files{display:flex;flex-wrap:wrap;gap:4px 22px;font-size:15px}
+.file{display:inline-flex;align-items:center;gap:8px}
+.file .nm{max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file .len{opacity:.6;font-variant-numeric:tabular-nums}
+/* pieces: blocks in playing order, width follows length */
+#pieces{display:flex;gap:6px;min-height:58px}
+.piece{flex:1 1 0;min-width:74px;border:1.5px solid var(--ink);border-radius:6px;padding:5px 8px;cursor:grab;opacity:.6;font-size:14px;font-variant-numeric:tabular-nums;overflow:hidden;white-space:nowrap;user-select:none}
+.piece:hover{opacity:.85}
+.piece.cur{opacity:1;background:var(--ink);color:var(--bg)}
+.piece.over{outline:2px dashed var(--ink);outline-offset:2px}
+.piece .n{font-style:italic;margin-right:6px}
+.piece small{display:block;opacity:.75;overflow:hidden;text-overflow:ellipsis}
+#empty{font-style:italic;opacity:.6}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="row">
+    <a href="index.html">← back to the synth</a>
+    <span class="sp"></span>
+    <button id="add">+ add audio file</button>
+    <input id="file" type="file" accept="audio/*" multiple hidden>
+  </div>
+
+  <div>
+    <h2>files</h2>
+    <div id="files"></div>
+  </div>
+
+  <canvas id="wave" tabindex="0" aria-label="Waveform. Click to place the cursor, drag the two markers to cut, scroll to zoom."></canvas>
+
+  <div class="row">
+    <button id="play" aria-label="Play this piece"><i></i></button>
+    <div id="time"></div>
+    <span class="sp"></span>
+    <button id="zout" title="zoom out">−</button><span style="opacity:.6;font-style:italic">zoom</span><button id="zin" title="zoom in">+</button>
+    <button id="zfit" title="show the whole file">whole file</button>
+    <button id="zpiece" title="zoom to the selected piece">this piece</button>
+  </div>
+
+  <div class="row">
+    <button id="setA" title="the piece starts at the cursor">start here<kbd>[</kbd></button>
+    <button id="setB" title="the piece ends at the cursor">end here<kbd>]</kbd></button>
+    <button id="split" title="cut the piece in two at the cursor">split here<kbd>S</kbd></button>
+    <button id="dup" title="make a copy of this piece">duplicate<kbd>D</kbd></button>
+    <button id="del" title="remove this piece">remove<kbd>⌫</kbd></button>
+    <span class="sp"></span>
+    <button id="left" title="play this piece earlier">‹ earlier</button>
+    <button id="right" title="play this piece later">later ›</button>
+  </div>
+
+  <div>
+    <h2>pieces, in the order they play <span id="total"></span></h2>
+    <div id="pieces"></div>
+  </div>
+
+  <div class="row">
+    <button id="all" title="play every piece in order">listen to all</button>
+    <span id="empty" hidden>Add an audio file to start.</span>
+  </div>
+</div>
+
+<script>
+/* Track editor. It edits the same data the synth page plays:
+   pieces  -> localStorage 'techno-track' as {clips:[{f: file id, a: start s, b: end s}], ...}
+   files   -> IndexedDB 'techno-track' as {id, name, data}
+   Every change is saved at once, so going back to the synth is enough. */
+const KEY='techno-track',$=id=>document.getElementById(id);
+const S={files:{},clips:[],cur:0,rest:{filter:0,level:.6,match:true,on:true}};
+let ac,cursor=0,view=[0,1],srcs=[],plan=[],playing=false;
+const clip=()=>S.clips[S.cur],file=()=>clip()&&S.files[clip().f];
+const fmt=t=>Math.floor(t/60)+':'+(t%60).toFixed(2).padStart(5,'0');
+const short=t=>Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0');
+
+/* ---------- storage ---------- */
+function save(){try{localStorage.setItem(KEY,JSON.stringify({...S.rest,v:2,clips:S.clips,cur:S.cur}))}catch(e){}}
+function idb(op,key,val){return new Promise(res=>{const rq=indexedDB.open('techno-track',1);rq.onupgradeneeded=()=>rq.result.createObjectStore('f');
+  rq.onerror=()=>res(null);rq.onsuccess=()=>{const st=rq.result.transaction('f','readwrite').objectStore('f'),r=op==='all'?st.getAll():op==='put'?st.put(val,key):st.delete(key);r.onsuccess=()=>res(r.result);r.onerror=()=>res(null)}})}
+async function decode(id,data,name){
+  try{
+    const buf=await new OfflineAudioContext(2,1,44100).decodeAudioData(data.slice(0)),d=buf.getChannelData(0);let mx=0;
+    for(let i=0;i<d.length;i+=8){const v=Math.abs(d[i]);if(v>mx)mx=v}
+    return S.files[id]={buf,data:d,norm:Math.min(8,1/(mx||1)),peak:mx||1,name};
+  }catch(e){return null}
+}
+async function open(){
+  let st=null;try{st=JSON.parse(localStorage.getItem(KEY))}catch(e){}
+  for(const k of (await idb('all'))||[])if(k&&k.data)await decode(k.id||'old',k.data,k.name);
+  try{const r=await fetch('tracks/default.mp3');if(r.ok)await decode('default',await r.arrayBuffer(),'default track')}catch(e){}
+  if(st){for(const k of ['filter','level','match','on'])if(st[k]!=null)S.rest[k]=st[k]}
+  if(st&&st.clips){S.clips=st.clips;S.cur=st.cur||0}
+  else{const id=S.files.old?'old':S.files.default?'default':null;
+    if(id&&!(st&&st.removed)){const dur=S.files[id].buf.duration;S.clips=[{f:id,a:st&&st.a<dur?st.a:0,b:st&&st.b?Math.min(st.b,dur):dur}]}}
+  S.clips=S.clips.filter(c=>S.files[c.f]).map(c=>({f:c.f,a:c.a,b:Math.min(c.b,S.files[c.f].buf.duration)}));
+  pick(Math.max(0,Math.min(S.cur,S.clips.length-1)),true);
+}
+async function addFile(f){
+  const data=await f.arrayBuffer(),id='f'+Date.now()+Math.random().toString(36).slice(2,6),name=f.name.replace(/\.[^.]+$/,''),x=await decode(id,data,name);
+  if(!x)return;idb('put',id,{id,name,data});
+  S.clips.splice(S.cur+1,0,{f:id,a:0,b:x.buf.duration});pick(Math.min(S.cur+1,S.clips.length-1),true);changed();
+}
+
+/* ---------- editing ---------- */
+function pick(i,fit){
+  const before=file();S.cur=i;const c=clip(),f=file();
+  if(f&&(fit||f!==before)){view=[0,f.buf.duration];cursor=c.a}
+  else if(c)cursor=Math.max(c.a,Math.min(cursor,c.b));
+  ui();
+}
+function changed(){stop();save();ui()}
+const ops={
+  setA(){const c=clip();if(c&&cursor<c.b-.02){c.a=cursor;changed()}},
+  setB(){const c=clip();if(c&&cursor>c.a+.02){c.b=cursor;changed()}},
+  split(){const c=clip();if(!c||cursor<=c.a+.02||cursor>=c.b-.02)return;
+    S.clips.splice(S.cur,1,{f:c.f,a:c.a,b:cursor},{f:c.f,a:cursor,b:c.b});S.cur++;changed()},
+  dup(){const c=clip();if(!c)return;S.clips.splice(S.cur+1,0,{...c});S.cur++;changed()},
+  del(){if(!clip())return;S.clips.splice(S.cur,1);pick(Math.max(0,Math.min(S.cur,S.clips.length-1)));changed()},
+  left(){move(-1)},right(){move(1)}
+};
+function move(d){const j=S.cur+d;if(j<0||j>=S.clips.length)return;[S.clips[S.cur],S.clips[j]]=[S.clips[j],S.clips[S.cur]];S.cur=j;changed()}
+for(const k in ops)$(k).onclick=ops[k];
+
+/* ---------- sound ---------- */
+function play(list){
+  if(!ac)ac=new (window.AudioContext||window.webkitAudioContext)();ac.resume();stop();
+  let at=ac.currentTime+.03;
+  for(const {c,from,len} of list){const f=S.files[c.f];if(!f||len<.02)continue;
+    const s=ac.createBufferSource(),g=ac.createGain();g.gain.value=f.norm*.8;s.buffer=f.buf;s.connect(g);g.connect(ac.destination);s.start(at,from,len);
+    srcs.push(s);plan.push({c,t0:at,p0:from,end:at+len});at+=len}
+  const last=srcs[srcs.length-1];if(!last)return;last.onended=()=>{if(srcs.includes(last))stop()};
+  playing=true;$('play').classList.add('on');
+}
+function stop(){for(const s of srcs)try{s.onended=null;s.stop()}catch(e){}srcs=[];plan=[];playing=false;$('play').classList.remove('on')}
+// play the selected piece from the cursor (or from its start if the cursor is outside it)
+function playPiece(){const c=clip();if(!c)return;const from=cursor>=c.a&&cursor<c.b-.05?cursor:c.a;play([{c,from,len:c.b-from}])}
+$('play').onclick=()=>playing?stop():playPiece();
+$('all').onclick=()=>playing?stop():play(S.clips.map(c=>({c,from:c.a,len:c.b-c.a})));
+
+/* ---------- lists ---------- */
+function ui(){
+  const c=clip(),total=S.clips.reduce((x,p)=>x+p.b-p.a,0);
+  $('empty').hidden=!!Object.keys(S.files).length;
+  $('files').innerHTML=Object.entries(S.files).map(([id,f])=>`<span class="file"><span class="nm" title="${f.name}">${f.name}</span><span class="len">${short(f.buf.duration)}</span><button data-new="${id}" title="add a piece from this file">+ piece</button>${id==='default'?'':`<button data-rm="${id}" title="remove this file and its pieces">×</button>`}</span>`).join('');
+  $('pieces').innerHTML=S.clips.map((p,i)=>`<div class="piece${i===S.cur?' cur':''}" draggable="true" data-i="${i}" style="flex-grow:${Math.max(.05,(p.b-p.a)/(total||1))}" title="drag to reorder, double-click to play"><span class="n">${i+1}</span>${(p.b-p.a).toFixed(1)} s<small>${short(p.a)}–${short(p.b)} · ${S.files[p.f].name}</small></div>`).join('');
+  $('total').textContent=S.clips.length?`· ${fmt(total)} in all`:'';
+  for(const k of ['setA','setB','split','dup','del','play','all','zpiece'])$(k).disabled=!c;
+  $('left').disabled=!c||S.cur===0;$('right').disabled=!c||S.cur===S.clips.length-1;
+  readout();
+}
+function readout(){const c=clip();$('time').innerHTML=c?`<span><b>cursor</b>${fmt(cursor)}</span><span><b>piece</b>${fmt(c.a)} – ${fmt(c.b)}</span><span><b>length</b>${(c.b-c.a).toFixed(2)} s</span>`:''}
+$('files').onclick=e=>{const b=e.target.closest('button');if(!b)return;
+  if(b.dataset.new){const id=b.dataset.new;S.clips.splice(S.cur+1,0,{f:id,a:0,b:S.files[id].buf.duration});pick(Math.min(S.cur+1,S.clips.length-1),true);changed()}
+  else{const id=b.dataset.rm;S.clips=S.clips.filter(p=>p.f!==id);delete S.files[id];idb('delete',id);pick(Math.max(0,Math.min(S.cur,S.clips.length-1)),true);changed()}};
+{const P=$('pieces');let from=null;
+  P.onclick=e=>{const el=e.target.closest('.piece');if(el)pick(+el.dataset.i)};
+  P.ondblclick=e=>{const el=e.target.closest('.piece');if(el){pick(+el.dataset.i);cursor=clip().a;playPiece()}};
+  P.ondragstart=e=>{const el=e.target.closest('.piece');if(el){from=+el.dataset.i;e.dataTransfer.effectAllowed='move'}};
+  P.ondragover=e=>{const el=e.target.closest('.piece');if(el&&from!=null){e.preventDefault();for(const x of P.children)x.classList.toggle('over',x===el)}};
+  P.ondragend=()=>{from=null;for(const x of P.children)x.classList.remove('over')};
+  P.ondrop=e=>{const el=e.target.closest('.piece');if(!el||from==null)return;e.preventDefault();const to=+el.dataset.i,[m]=S.clips.splice(from,1);S.clips.splice(to,0,m);S.cur=to;from=null;changed()}}
+$('add').onclick=()=>$('file').click();
+$('file').onchange=async e=>{for(const f of e.target.files)await addFile(f);e.target.value=''};
+addEventListener('dragover',e=>{if(e.dataTransfer.types.includes('Files'))e.preventDefault()});
+addEventListener('drop',async e=>{if(!e.dataTransfer.files.length)return;e.preventDefault();for(const f of e.dataTransfer.files)if(f.type.startsWith('audio'))await addFile(f)});
+
+/* ---------- waveform ---------- */
+const cv=$('wave'),cx=cv.getContext('2d');
+const tx=t=>(t-view[0])/(view[1]-view[0])*cv.clientWidth,xt=x=>view[0]+x/cv.clientWidth*(view[1]-view[0]);
+function zoom(k,at){const f=file();if(!f)return;const dur=f.buf.duration,w=Math.max(.05,Math.min(dur,(view[1]-view[0])*k)),r=(at-view[0])/(view[1]-view[0]);
+  let a=at-r*w;a=Math.max(0,Math.min(dur-w,a));view=[a,a+w]}
+$('zin').onclick=()=>zoom(.5,cursor>=view[0]&&cursor<=view[1]?cursor:(view[0]+view[1])/2);
+$('zout').onclick=()=>zoom(2,(view[0]+view[1])/2);
+$('zfit').onclick=()=>{const f=file();if(f)view=[0,f.buf.duration]};
+$('zpiece').onclick=()=>{const c=clip();if(c){const pad=(c.b-c.a)*.08;view=[Math.max(0,c.a-pad),Math.min(file().buf.duration,c.b+pad)]}};
+cv.addEventListener('wheel',e=>{if(!file())return;e.preventDefault();
+  if(Math.abs(e.deltaX)>Math.abs(e.deltaY)||e.shiftKey){const dur=file().buf.duration,w=view[1]-view[0],d=(e.deltaX||e.deltaY)/cv.clientWidth*w;const a=Math.max(0,Math.min(dur-w,view[0]+d));view=[a,a+w]}
+  else zoom(Math.exp(e.deltaY*.002),xt(e.offsetX))},{passive:false});
+{let h=null;
+  const near=x=>{const c=clip();if(!c)return null;const da=Math.abs(x-tx(c.a)),db=Math.abs(x-tx(c.b));return Math.min(da,db)>9?null:da<db?'a':'b'};
+  cv.addEventListener('pointerdown',e=>{const c=clip();if(!c)return;cv.setPointerCapture(e.pointerId);h=near(e.offsetX)||'cursor';drag(e)});
+  cv.addEventListener('pointermove',e=>{if(h)drag(e);else cv.style.cursor=near(e.offsetX)?'ew-resize':'crosshair'});
+  cv.addEventListener('pointerup',()=>{if(!h)return;const w=h,c=clip();h=null;
+    if(w==='cursor'){if(playing)playPiece();return}
+    save();ui();
+    // hear the cut: the new start, or the last 2 s before the new end
+    if(w==='a')play([{c,from:c.a,len:Math.min(3,c.b-c.a)}]);else{const f=Math.max(c.a,c.b-2);play([{c,from:f,len:c.b-f}])}});
+  function drag(e){const c=clip(),dur=file().buf.duration,r=cv.getBoundingClientRect(),t=Math.max(0,Math.min(dur,xt(e.clientX-r.left)));
+    if(h==='a')c.a=Math.min(t,c.b-.05);else if(h==='b')c.b=Math.max(t,c.a+.05);else cursor=t;readout()}}
+function draw(){
+  requestAnimationFrame(draw);
+  const d=devicePixelRatio||1,w=cv.clientWidth,h=cv.clientHeight;
+  if(cv.width!==Math.round(w*d)||cv.height!==Math.round(h*d)){cv.width=Math.round(w*d);cv.height=Math.round(h*d)}
+  cx.setTransform(d,0,0,d,0,0);cx.clearRect(0,0,w,h);
+  const c=clip(),f=file();if(!f)return;
+  const ink=getComputedStyle(document.documentElement).getPropertyValue('--ink'),dot=getComputedStyle(document.documentElement).getPropertyValue('--dot');
+  cx.strokeStyle=cx.fillStyle=ink;
+  const sr=f.buf.sampleRate,data=f.data,xa=tx(c.a),xb=tx(c.b),spp=(view[1]-view[0])*sr/w,stride=Math.max(1,Math.floor(spp/48));
+  // the selected piece is shaded; the waveform is one min–max line per pixel
+  cx.globalAlpha=.1;cx.fillRect(xa,0,xb-xa,h);
+  cx.lineWidth=1;
+  for(let x=0;x<w;x++){
+    const i0=Math.floor((view[0]*sr)+x*spp),i1=Math.min(data.length,Math.floor(i0+spp)+1);let lo=0,hi=0;
+    for(let i=Math.max(0,i0);i<i1;i+=stride){const v=data[i];if(v<lo)lo=v;if(v>hi)hi=v}
+    cx.globalAlpha=x>=xa&&x<=xb?.95:.3;cx.beginPath();cx.moveTo(x+.5,h/2-hi/f.peak*h*.46-.5);cx.lineTo(x+.5,h/2-lo/f.peak*h*.46+.5);cx.stroke();
+  }
+  // other pieces from this file: thin bars along the bottom
+  cx.globalAlpha=.45;for(const p of S.clips)if(p!==c&&p.f===c.f)cx.fillRect(tx(p.a),h-4,tx(p.b)-tx(p.a),4);
+  // time ticks
+  cx.globalAlpha=.6;cx.font='12px "STIX Two Text",Times,serif';
+  const span=view[1]-view[0],step=[.1,.25,.5,1,2,5,10,15,30,60].find(s=>span/s<=12)||120;
+  for(let t=Math.ceil(view[0]/step)*step;t<=view[1];t+=step){const x=tx(t);cx.fillRect(x,0,1,5);cx.fillText(step<1?fmt(t):short(t),x+4,12)}
+  // markers
+  cx.globalAlpha=1;cx.lineWidth=2;
+  for(const [x,dir] of [[xa,1],[xb,-1]]){cx.beginPath();cx.moveTo(x,0);cx.lineTo(x,h);cx.stroke();cx.beginPath();cx.moveTo(x,h);cx.lineTo(x+dir*10,h);cx.lineTo(x,h-13);cx.fill()}
+  // cursor, and the dot that follows the sound
+  const xc=tx(cursor);cx.lineWidth=1;cx.setLineDash([4,4]);cx.beginPath();cx.moveTo(xc,0);cx.lineTo(xc,h);cx.stroke();cx.setLineDash([]);
+  if(ac&&playing){const now=ac.currentTime,p=plan.find(p=>now>=p.t0&&now<=p.end);
+    if(p&&p.c!==c&&S.clips.includes(p.c)){S.cur=S.clips.indexOf(p.c);if(S.files[p.c.f]!==f)view=[0,S.files[p.c.f].buf.duration];ui()}   // "listen to all" follows along
+    if(p&&p.c===clip()){const x=tx(p.p0+now-p.t0);cx.fillStyle=dot;cx.beginPath();cx.arc(x,h/2,7,0,7);cx.fill();cx.stroke()}}
+}
+
+/* ---------- keys ---------- */
+addEventListener('keydown',e=>{
+  if(e.metaKey||e.ctrlKey||e.altKey)return;
+  const k=e.key.toLowerCase(),step=(view[1]-view[0])/200*(e.shiftKey?10:1);
+  if(e.code==='Space'){e.preventDefault();if(!e.repeat)playing?stop():playPiece()}
+  else if(k==='[')ops.setA();else if(k===']')ops.setB();
+  else if(k==='s')ops.split();else if(k==='d')ops.dup();
+  else if(k==='backspace'||k==='delete'){e.preventDefault();ops.del()}
+  else if(k==='arrowleft'||k==='arrowright'){e.preventDefault();const f=file();if(f){cursor=Math.max(0,Math.min(f.buf.duration,cursor+(k==='arrowleft'?-step:step)));readout()}}
+});
+ui();open();draw();
+</script>
+</body>
+</html>

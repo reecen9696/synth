@@ -99,7 +99,9 @@ select option{font-style:normal;color:#111;background:#fff}
 .clip button[aria-pressed]{text-decoration:none;max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .clip .arrow{opacity:.35;margin:0 -2px 0 2px}
 #tw{position:static;width:100%;height:56px;cursor:ew-resize;touch-action:none}
-#track.empty #tw,#track.empty .k,#track.empty #t-match,#track.empty #t-listen{display:none}
+#track.empty .k,#track.empty #t-match,#track.empty #t-listen{display:none}
+#t-sum{font-style:italic;opacity:.6;font-variant-numeric:tabular-nums}
+a{color:inherit;text-underline-offset:4px;opacity:.75}a:hover{opacity:1}
 #knobs{padding-left:92px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 26px}
 .k label{display:flex;justify-content:space-between;font-style:italic;font-size:15px}
 .k output{font-style:normal;font-variant-numeric:tabular-nums;opacity:.7}
@@ -147,10 +149,9 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radiu
       <div class="k"><label for="t-filter">filter<output id="t-filterv"></output></label><input id="t-filter" type="range" min="-1" max="1" step=".01"></div>
       <div class="k"><label for="t-level">level<output id="t-levelv"></output></label><input id="t-level" type="range" min="0" max="1" step=".01"></div>
       <button id="t-match" aria-pressed="true" title="change the track's speed so it lines up with the bars">match beat</button>
-      <input id="t-file" type="file" accept="audio/*" hidden>
+      <span id="t-sum"></span>
+      <a id="t-edit" href="editor.html">cut &amp; arrange →</a>
     </div>
-    <div id="t-clips" role="group" aria-label="Pieces of the track, played in this order"></div>
-    <canvas id="tw" aria-label="Waveform of the selected piece. Drag the two markers to cut it."></canvas>
   </section>
   <div id="formula" aria-live="off"></div>
 </div>
@@ -816,93 +817,50 @@ addEventListener('keydown',e=>{
 addEventListener('keyup',e=>{const d=KEYS.indexOf(e.key.toLowerCase());if(d>=0)held.delete(d)});
 addEventListener('blur',()=>held.clear());
 addEventListener('keyup',e=>{if(e.code==='Space')e.preventDefault()});
-/* ---------- track UI ---------- */
-const tw=$('tw'),tx=tw.getContext('2d'),TKEY='techno-track';
+/* ---------- track UI ----------
+   The cutting happens on editor.html. Both pages share the same saved pieces (localStorage) and files (IndexedDB). */
+const TKEY='techno-track';
 const mmss=t=>Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0');
 function trackSave(){try{localStorage.setItem(TKEY,JSON.stringify({v:2,clips:TR.clips,cur:TR.cur,filter:TR.filter,level:TR.level,match:TR.match,on:TR.on}))}catch(e){}}
-function trackBeat(){const c=clip();TR.bpm=TR.clips.length===1&&TR.files[c.f]?detectBpm(TR.files[c.f].buf,c.a,c.b):0}
+function trackBeat(){const c=TR.clips[0];TR.bpm=TR.clips.length===1&&TR.files[c.f]?detectBpm(TR.files[c.f].buf,c.a,c.b):0}
 function trackUI(){
-  const c=clip();$('track').classList.toggle('empty',!c);
+  const n=TR.clips.length;$('track').classList.toggle('empty',!n);
   $('t-on').setAttribute('aria-pressed',TR.on);$('t-match').setAttribute('aria-pressed',TR.match);
   $('t-filter').value=TR.filter;$('t-level').value=TR.level;
   const x=TR.filter;$('t-filterv').textContent=Math.abs(x)<.02?'off':x<0?'low '+Math.round(20000*Math.pow(.01,-x))+' Hz':'high '+Math.round(20*Math.pow(200,x))+' Hz';
   $('t-levelv').textContent=TR.level.toFixed(2);
-  // the pieces, in playing order. The selected one gets move and remove buttons
-  $('t-clips').innerHTML=TR.clips.map((p,i)=>{const on=i===TR.cur,nm=(TR.files[p.f]||{}).name||'';
-    return (i?'<span class="arrow">→</span>':'')+`<span class="clip${on?' cur':''}"><button data-c="${i}" aria-pressed="${on}" title="${nm}">${mmss(p.a)}–${mmss(p.b)}</button>`+
-      (on?`<button data-m="-1" title="play this piece earlier"${i?'':' disabled'}>‹</button><button data-m="1" title="play this piece later"${i<TR.clips.length-1?'':' disabled'}>›</button><button data-x="1" title="remove this piece">×</button>`:'')+`</span>`}).join('')+
-    (c?`<button data-add="piece" title="cut another piece from the same file">+ piece</button>`:'')+`<button data-add="file" title="add a piece from another audio file">+ file</button>`;
+  $('t-sum').textContent=n?`${n} piece${n>1?'s':''} · ${mmss(trackLen())}`:'no track yet';
 }
-$('t-clips').onclick=e=>{
-  const b=e.target.closest('button');if(!b||b.disabled)return;const d=b.dataset,c=clip();
-  if(d.c!=null)TR.cur=+d.c;
-  else if(d.m){const j=TR.cur+ +d.m;[TR.clips[TR.cur],TR.clips[j]]=[TR.clips[j],TR.clips[TR.cur]];TR.cur=j}
-  else if(d.x){TR.clips.splice(TR.cur,1);TR.cur=Math.max(0,Math.min(TR.cur,TR.clips.length-1));
-    if(c.f!=='default'&&!TR.clips.some(p=>p.f===c.f)){delete TR.files[c.f];idb('delete',c.f)}}
-  else if(d.add==='piece'){const dur=TR.files[c.f].buf.duration,len=c.b-c.a,a=c.b<dur-1?c.b:0;   // starts where this one ends
-    TR.clips.splice(TR.cur+1,0,{f:c.f,a,b:Math.min(dur,a+len)});TR.cur++}
-  else if(d.add==='file'){$('t-file').click();return}
-  trackStop();TR.bar=0;trackBeat();trackUI();trackSave();
-};
-function trackDraw(){
-  const c=clip(),f=c&&TR.files[c.f];if(!f)return;const r=tw.getBoundingClientRect(),d=devicePixelRatio||1,w=r.width,h=r.height;
-  if(tw.width!==Math.round(w*d)){tw.width=Math.round(w*d);tw.height=Math.round(h*d)}
-  tx.setTransform(d,0,0,d,0,0);tx.clearRect(0,0,w,h);tx.strokeStyle=tx.fillStyle=scene.ink;
-  const dur=f.buf.duration,xa=c.a/dur*w,xb=c.b/dur*w,P2=f.peaks,np=P2.length;
-  tx.lineWidth=1;
-  for(let i=0;i<np;i++){const x=i/np*w,y=Math.max(.5,P2[i]*h*.48);tx.globalAlpha=x>=xa&&x<=xb?(TR.on?.9:.4):.2;tx.beginPath();tx.moveTo(x,h/2-y);tx.lineTo(x,h/2+y);tx.stroke()}
-  // other pieces cut from the same file, shown as faint bars along the bottom
-  tx.globalAlpha=.35;for(const p of TR.clips)if(p!==c&&p.f===c.f)tx.fillRect(p.a/dur*w,h-3,(p.b-p.a)/dur*w,3);
-  tx.globalAlpha=1;tx.lineWidth=2;for(const x of [xa,xb]){tx.beginPath();tx.moveTo(x,0);tx.lineTo(x,h);tx.stroke()}
-  tx.beginPath();tx.moveTo(xa,0);tx.lineTo(xa+7,0);tx.lineTo(xa,9);tx.fill();tx.beginPath();tx.moveTo(xb,0);tx.lineTo(xb-7,0);tx.lineTo(xb,9);tx.fill();
-  if(ac){const now=ac.currentTime,p=TR.plan.find(p=>p.c===c&&now>=p.t0&&now<=p.end);
-    if(p){tx.fillStyle=scene.dot;tx.beginPath();tx.arc((p.p0+(now-p.t0)*TR.rate)/dur*w,h/2,5,0,7);tx.fill();tx.stroke()}}
-}
-(function loop(){requestAnimationFrame(loop);trackDraw()})();
-// decode a file, measure its peaks (for the picture) and how much to boost it (norm)
+// decode a file and measure how much to boost it (norm)
 async function trackFile(id,data,name){
   try{
-    const buf=await new OfflineAudioContext(2,1,44100).decodeAudioData(data.slice(0));
-    const d=buf.getChannelData(0),np=900,pk=new Float32Array(np),sz=Math.floor(d.length/np);let mx=0;
-    for(let i=0;i<np;i++){let m=0;for(let j=0;j<sz;j+=8){const v=Math.abs(d[i*sz+j]);if(v>m)m=v}pk[i]=m;if(m>mx)mx=m}
-    for(let i=0;i<np;i++)pk[i]/=mx||1;
-    return TR.files[id]={buf,peaks:pk,norm:Math.min(8,1/(mx||1)),name};
+    const buf=await new OfflineAudioContext(2,1,44100).decodeAudioData(data.slice(0)),d=buf.getChannelData(0);let mx=0;
+    for(let i=0;i<d.length;i+=8){const v=Math.abs(d[i]);if(v>mx)mx=v}
+    return TR.files[id]={buf,norm:Math.min(8,1/(mx||1)),name};
   }catch(e){return null}
 }
-async function trackAdd(file){
-  const data=await file.arrayBuffer(),id='f'+Date.now(),name=file.name.replace(/\.[^.]+$/,''),f=await trackFile(id,data,name);if(!f)return;
-  idb('put',id,{id,name,data});
-  TR.clips.splice(TR.cur+1,0,{f:id,a:0,b:f.buf.duration});TR.cur=Math.min(TR.cur+1,TR.clips.length-1);
-  trackStop();TR.bar=0;trackBeat();trackUI();trackSave();
-}
-// files you add are kept in the browser (IndexedDB) so they are still there after a reload
 function idb(op,key,val){return new Promise(res=>{const rq=indexedDB.open('techno-track',1);rq.onupgradeneeded=()=>rq.result.createObjectStore('f');
   rq.onerror=()=>res(null);rq.onsuccess=()=>{const st=rq.result.transaction('f','readwrite').objectStore('f'),r=op==='all'?st.getAll():op==='put'?st.put(val,key):st.delete(key);r.onsuccess=()=>res(r.result);r.onerror=()=>res(null)}})}
-$('t-file').onchange=e=>{const f=e.target.files[0];if(f)trackAdd(f);e.target.value=''};
 $('t-on').onclick=()=>{TR.on=!TR.on;if(!TR.on)trackStop();else TR.bar=0;trackUI();trackSave()};
 $('t-listen').onclick=()=>{if(TR.solo)trackStop();else trackListen(TR.clips.map(c=>({c,from:c.a,len:c.b-c.a})))};
 $('t-match').onclick=()=>{TR.match=!TR.match;TR.bar=0;trackUI();trackSave()};
 $('t-filter').oninput=e=>{TR.filter=+e.target.value;trackParams();trackUI();trackSave()};
 $('t-level').oninput=e=>{TR.level=+e.target.value;trackParams();trackUI();trackSave()};
-addEventListener('dragover',e=>e.preventDefault());
-addEventListener('drop',e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f&&f.type.startsWith('audio'))trackAdd(f)});
-{let h=null;const at=e=>{const r=tw.getBoundingClientRect();return Math.max(0,Math.min(1,(e.clientX-r.left)/r.width))*TR.files[clip().f].buf.duration};
-  const move=e=>{const t=at(e),c=clip();if(h==='a')c.a=Math.min(t,c.b-.1);else c.b=Math.max(t,c.a+.1);trackUI()};
-  tw.addEventListener('pointerdown',e=>{const c=clip();if(!c)return;const t=at(e);h=Math.abs(t-c.a)<Math.abs(t-c.b)?'a':'b';tw.setPointerCapture(e.pointerId);move(e)});
-  tw.addEventListener('pointermove',e=>{if(h)move(e)});
-  // letting go plays the new start, or the last 2 s before the new end
-  tw.addEventListener('pointerup',()=>{if(!h)return;const w=h,c=clip();h=null;trackBeat();TR.bar=0;trackUI();trackSave();
-    if(!playing){if(w==='a')trackListen([{c,from:c.a,len:Math.min(3,c.b-c.a)}]);else{const f=Math.max(c.a,c.b-2);trackListen([{c,from:f,len:c.b-f}])}}})}
-// start-up: files you added before, plus tracks/default.mp3 if the folder has one
-(async()=>{trackUI();let st=null;try{st=JSON.parse(localStorage.getItem(TKEY))}catch(e){}
-  for(const k of (await idb('all'))||[])if(k&&k.data)await trackFile(k.id||'old',k.data,k.name);
-  if(!st||!st.clips||st.clips.some(c=>c.f==='default'))try{const r=await fetch('tracks/default.mp3');if(r.ok)await trackFile('default',await r.arrayBuffer(),'default track')}catch(e){}
-  if(st&&st.clips){Object.assign(TR,{clips:st.clips,cur:st.cur||0,filter:st.filter,level:st.level,match:st.match,on:st.on})}
+// load the saved pieces and their files. Runs at start and again when you come back from the editor
+async function trackOpen(){
+  let st=null;try{st=JSON.parse(localStorage.getItem(TKEY))}catch(e){}
+  for(const k of (await idb('all'))||[])if(k&&k.data&&!TR.files[k.id||'old'])await trackFile(k.id||'old',k.data,k.name);
+  if(!TR.files.default&&(!st||!st.clips||st.clips.some(c=>c.f==='default')))try{const r=await fetch('tracks/default.mp3');if(r.ok)await trackFile('default',await r.arrayBuffer(),'default track')}catch(e){}
+  if(st&&st.clips)Object.assign(TR,{clips:st.clips,cur:st.cur||0,filter:st.filter,level:st.level,match:st.match,on:st.on});
   else{if(st&&st.filter!=null)Object.assign(TR,{filter:st.filter,level:st.level,match:st.match,on:st.on});
     const id=TR.files.old?'old':TR.files.default?'default':null;                  // first run, or settings from the one-piece version
     if(id&&!(st&&st.removed)){const dur=TR.files[id].buf.duration;TR.clips=[{f:id,a:st&&st.a<dur?st.a:0,b:st&&st.b?Math.min(st.b,dur):dur}]}}
-  TR.clips=TR.clips.filter(c=>TR.files[c.f]).map(c=>({f:c.f,a:c.a,b:Math.min(c.b,TR.files[c.f].buf.duration)}));TR.cur=Math.max(0,Math.min(TR.cur,TR.clips.length-1));
-  if(clip())trackBeat();trackParams();trackUI()})();
+  TR.clips=TR.clips.filter(c=>TR.files[c.f]).map(c=>({f:c.f,a:c.a,b:Math.min(c.b,TR.files[c.f].buf.duration)}));
+  TR.bar=0;if(TR.clips.length)trackBeat();trackParams();trackUI();
+}
+trackUI();trackOpen();
+addEventListener('pageshow',e=>{if(e.persisted)trackOpen()});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)trackOpen()});
 {const i=load();const v=sel;setScene(SCENES[i]);select(v)}draw();
 </script>
 </body>
