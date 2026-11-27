@@ -52,7 +52,7 @@ canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;touch-a
 /* sequencer: 16 bars, columns line up with the 16 steps of the graph below */
 #seq{display:grid;grid-template-columns:126px repeat(var(--n),minmax(0,56px));row-gap:1px;user-select:none}
 #seq[hidden]{display:none}
-#bars{display:flex;align-items:center;gap:2px 10px;font-variant-numeric:tabular-nums}
+#bars{display:flex;align-items:center;gap:2px 10px;font-variant-numeric:tabular-nums;padding-left:126px;margin:0 0 -8px;font-size:14px}
 #bars span{font-style:italic;opacity:.6;margin-right:2px}
 #seq .lab{font-style:italic;text-align:right;padding-right:22px;font-size:13px;line-height:15px;opacity:.75}
 #seq .lab.off{opacity:.3}
@@ -74,6 +74,7 @@ canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;touch-a
 #presets{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;font-size:15px;min-height:1.6em}
 #presets span{font-style:italic;opacity:.6;margin-right:-4px}
 #presets .gap{width:18px}
+#presets .br{flex-basis:100%;height:0}
 #rec.on{opacity:1;color:var(--dot)}
 #knobs{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 26px}
 .k label{display:flex;justify-content:space-between;font-style:italic;font-size:15px}
@@ -93,7 +94,8 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radiu
     <div class="tempo"><input id="swing" type="range" min="50" max="72" step="1" aria-label="Swing" style="width:56px"><span id="swingv"></span></div>
     <div class="tempo"><input id="bpm" type="range" min="110" max="160" step="1" aria-label="Tempo"><span id="bpmv"></span></div>
   </header>
-  <section id="seq" aria-label="Sequence: which voices play in each of 16 bars"></section>
+  <div id="bars" role="group" aria-label="How many bars in the sequence"><span>sequence</span></div>
+  <section id="seq" aria-label="Sequence: which voices play in each bar"></section>
 
   <main>
     <div id="side" role="group" aria-label="Show or hide voices"></div>
@@ -104,21 +106,18 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radiu
     <button id="play" aria-label="Play"><i></i></button>
     <div id="voices" role="group" aria-label="Voice"></div>
     <span class="sp"></span>
-    <div id="bars" role="group" aria-label="How many bars in the sequence"><span>bars</span></div>
     <button id="new">new pattern</button>
-    <button id="rec" title="record what you hear, press again to save the file">record</button>
   </div>
 
   <div id="presets"></div>
   <div id="formula" aria-live="off"></div>
   <div id="knobs"></div>
-  <p class="hint">Click to add a note, click it again to remove. Drag a note to move it, drag across steps to paint. Shift-click: accent. Alt-click: slide. The switches on the left show or hide a voice. Bars sets how long the sequence is; click it to choose which voices play in each bar. Space plays.</p>
 </div>
 
 <script>
 /* ---------- data ---------- */
-const TABS=['kick','bass','clap','hat','open','acid'];
-const BAND={acid:[.05,.30],open:[.34,.40],hat:[.43,.49],clap:[.52,.58],kick:[.62,.84],bass:[.89,.97]};
+const TABS=['kick','bass','clap','hat','open','acid','vox'];
+const BAND={vox:[.02,.08],acid:[.13,.33],open:[.36,.41],hat:[.44,.49],clap:[.52,.58],kick:[.62,.84],bass:[.89,.97]};
 const MODES={phrygian:[0,1,3,5,7,8,10,12],minor:[0,2,3,5,7,8,10,12],dorian:[0,2,3,5,7,9,10,12]};
 const NOTE=['C','C♯','D','E♭','E','F','F♯','G','A♭','A','B♭','B'];
 const hz=m=>440*Math.pow(2,(m-69)/12);       // f = 440 · 2^((n−69)/12)
@@ -130,13 +129,18 @@ const DEF={
   clap:[['tone','tone',600,3000,1100,'Hz'],['decay','decay',.05,.6,.22,'s'],['level','level',0,1,.5,'']],
   hat:[['tone','tone',5000,13000,8500,'Hz'],['decay','decay',.015,.12,.045,'s'],['level','level',0,1,.4,'']],
   open:[['tone','tone',5000,13000,8000,'Hz'],['decay','decay',.1,.8,.3,'s'],['level','level',0,1,.35,'']],
-  acid:[['cut','cutoff',100,2000,360,'Hz'],['res','resonance',.5,24,13,''],['env','env mod',0,5000,2400,'Hz'],['decay','decay',.05,.8,.22,'s'],['level','level',0,1,.5,'']]
+  acid:[['cut','cutoff',100,2000,360,'Hz'],['res','resonance',.5,24,13,''],['env','env mod',0,5000,2400,'Hz'],['decay','decay',.05,.8,.22,'s'],['level','level',0,1,.5,'']],
+  vox:[['vowel','vowel',0,4,0,''],['talk','talk',0,4,1.5,''],['oct','octave',0,2,1,''],['decay','length',.05,1,.3,'s'],['level','level',0,1,.4,'']]
 };
-const defaults=()=>{const p={};for(const v of TABS){p[v]={};for(const d of DEF[v])p[v][d[0]]=d[4]}return p};
+/* synths for the acid voice: 0 is the mono TB-303, the rest are polyphonic (chords work) */
+const SYNTHS=['303','fm bell','pluck','stab','supersaw','square'];
+const defaults=()=>{const p={};for(const v of TABS){p[v]={};for(const d of DEF[v])p[v][d[0]]=d[4]}p.acid.type=0;return p};
+const degs=s=>s.c&&s.c.length?s.c:[s.d];          // a step can hold a chord
+const clampD=d=>Math.max(0,Math.min(7,d));
 const ON={};for(const v of TABS)ON[v]=true;       // left switches
-const ROWS=['acid','open','hat','clap','kick','bass']; // top to bottom, same as the graph
+const ROWS=['vox','acid','open','hat','clap','kick','bass']; // top to bottom, same as the graph
 /* Default 16 bar arrangement: intro, groove, full, break, build, drop. */
-const ARR={kick:'xxxxxxxx..xxxxxx',hat:'xxxxxxxxxxxxxxxx',bass:'..xxxxxx..xxxxxx',open:'..xxxxxxxx..xxxx',clap:'....xxxx...xxxxx',acid:'....xxxxxx..xxxx'};
+const ARR={kick:'xxxxxxxx..xxxxxx',hat:'xxxxxxxxxxxxxxxx',bass:'..xxxxxx..xxxxxx',open:'..xxxxxxxx..xxxx',clap:'....xxxx...xxxxx',acid:'....xxxxxx..xxxx',vox:'........xx...xxx'};
 
 const b=s=>[...s].map(c=>c==='x'?1:0);
 const a=s=>s.split(' ').map(t=>t==='-'?null:{d:+t[0],a:t.includes('a'),s:t.includes('s')});
@@ -181,7 +185,7 @@ const SCENES=[
 const PICK={1:[12],2:[4,12],4:[0,4,9,12],8:[0,2,4,6,8,10,12,14],16:[...Array(16).keys()]};
 let nBars=4;
 const arrange=s=>{s.arr={};for(const v of TABS)s.arr[v]=PICK[nBars].map(i=>ARR[v][i]==='x'?1:0)};
-for(const s of SCENES){s.P=defaults();for(const v in s.set)Object.assign(s.P[v],s.set[v]);arrange(s)}
+for(const s of SCENES){s.pat.vox=s.pat.vox||b('..x.......x...x.');s.P=defaults();for(const v in s.set)Object.assign(s.P[v],s.set[v]);arrange(s)}
 let scene=SCENES[0],pat=scene.pat,P=scene.P,bpm=scene.bpm,sel='kick';
 const SCALE=()=>MODES[scene.mode];
 const ROOT=()=>hz(scene.root);
@@ -273,6 +277,7 @@ function hat(t,p,open){
 }
 function acid(i,t,sd){
   const s=pat.acid[i];if(!s)return;
+  if(P.acid.type){const ds=degs(s);for(const d of ds)polyNote(t,ROOT()*2*Math.pow(2,SCALE()[d]/12),s.a,sd,ds.length);return}
   const p=P.acid,prev=pat.acid[(i+15)%16],next=pat.acid[(i+1)%16],tied=prev&&prev.s;
   const f=ROOT()*2*Math.pow(2,SCALE()[s.d]/12);
   if(tied){N.ao.frequency.cancelScheduledValues(t);N.ao.frequency.setTargetAtTime(f,t,.02)}   // slide: 60 ms glide, no retrigger
@@ -286,6 +291,47 @@ function acid(i,t,sd){
   }
   if(!(s.s&&next))N.vca.gain.setTargetAtTime(0,t+sd*.55,.012);
 }
+const osc=(type,f)=>{const o=ac.createOscillator();o.type=type;o.frequency.value=f;return o};
+// polyphonic synth note. Shared sliders: cutoff, resonance, env mod (FM: index), decay, level
+function polyNote(t,f,acc,sd,n){
+  const p=P.acid,type=p.type,g=G(0),lv=G(p.level*(acc?1:.72)/Math.sqrt(n)),dur=p.decay*1.8+.1,end=t+dur+(type===5?sd:0);
+  const fl=F('lowpass',p.cut,Math.min(p.res,14)*.45+.5),peak=Math.min(14000,p.cut+p.env*(acc?1.5:1));
+  fl.frequency.setValueAtTime(peak,t);fl.frequency.setTargetAtTime(p.cut,t,(type===2?p.decay/8:p.decay/4));
+  const srcs=[];
+  if(type===1){                        // FM bell: carrier f, modulator 3.5f, index decays
+    const c=osc('sine',f),m=osc('sine',f*3.5),mg=G(0);mg.gain.setValueAtTime(f*3.5*p.env/600,t);mg.gain.setTargetAtTime(0,t,p.decay/3);
+    chain(m,mg,c.frequency);c.connect(g);srcs.push(c,m);
+  }else if(type===4){                  // supersaw: seven detuned saws (JP-8000 offsets)
+    for(const o of [-.11,-.063,-.0195,0,.0199,.062,.107]){const x=osc('sawtooth',f*(1+o*.18));x.connect(fl);srcs.push(x)}fl.connect(g);
+  }else if(type===5){                  // square lead with delayed vibrato
+    const x=osc('square',f),vib=osc('sine',5.5),vg=G(0);vg.gain.setValueAtTime(0,t);vg.gain.linearRampToValueAtTime(f*.012,t+.15);
+    chain(vib,vg,x.frequency);x.connect(fl);fl.connect(g);srcs.push(x,vib);
+  }else{                               // pluck (one saw) or stab (two saws ±9 cents)
+    for(const c of type===3?[-9,9]:[0]){const x=osc('sawtooth',f);x.detune.value=c;x.connect(fl);srcs.push(x)}fl.connect(g);
+  }
+  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(1,t+.003);
+  if(type===5){g.gain.setValueAtTime(1,t+sd*.9);g.gain.setTargetAtTime(0,t+sd*.9,p.decay/4)}else g.gain.setTargetAtTime(0,t+.004,p.decay/4);
+  chain(g,lv,N.duck);const ds=G(.3);lv.connect(ds);ds.connect(N.dSend);
+  for(const x of srcs){x.start(t);x.stop(end)}
+}
+/* vox: a saw (plus a detuned twin) through three vowel formant filters.
+   Formants F1–F3 for a e i o u, adult male (Peterson & Barney 1952). talk sweeps the vowel during the note. */
+const VOWELS=[[730,1090,2440],[530,1840,2480],[270,2290,3010],[570,840,2410],[300,870,2240]];
+const FBW=[90,110,170],FG=[1,.55,.3];
+const formants=v=>{v=Math.max(0,Math.min(4,v));const i=Math.min(3,Math.floor(v)),k=v-i;return VOWELS[i].map((f,j)=>f+(VOWELS[i+1][j]-f)*k)};
+const voxPitch=i=>{for(let k=0;k<16;k++){const x=pat.acid[(i-k+16)%16];if(x)return x.d}return 0};  // follows the acid line
+function vox(i,t,sd){
+  const p=P.vox,f=ROOT()*Math.pow(2,(SCALE()[voxPitch(i)]+12*(Math.round(p.oct)+1))/12),dur=p.decay;
+  const v0=p.vowel,v1=v0+p.talk<=4?v0+p.talk:Math.max(0,v0-p.talk),F0=formants(v0),F1=formants(v1);
+  const src=G(.5),g=G(0),lv=G(p.level);
+  const a=osc('sawtooth',f),b2=osc('sawtooth',f);b2.detune.value=7;
+  const vib=osc('sine',5.2),vg=G(0);vg.gain.setValueAtTime(0,t);vg.gain.linearRampToValueAtTime(f*.012,t+dur*.6);chain(vib,vg,a.frequency);vg.connect(b2.frequency);
+  a.connect(src);b2.connect(src);
+  for(let k=0;k<3;k++){const bp=F('bandpass',F0[k],F0[k]/FBW[k]);bp.frequency.setValueAtTime(F0[k],t);bp.frequency.linearRampToValueAtTime(F1[k],t+dur);chain(src,bp,G(FG[k]*3),g)}
+  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(1,t+.015);g.gain.setTargetAtTime(0,t+dur*.75,dur*.12);
+  chain(g,lv,N.duck);const rv=G(.35);lv.connect(rv);rv.connect(N.vSend);const dl=G(.25);lv.connect(dl);dl.connect(N.dSend);
+  for(const x of [a,b2,vib]){x.start(t);x.stop(t+dur*1.6+.1)}
+}
 const live=(v,bar)=>ON[v]&&!!scene.arr[v][bar%nBars];   // a voice sounds if its switch is on and its bar is lit
 function fire(i,t,bar){
   const sd=60/bpm/4;
@@ -295,6 +341,7 @@ function fire(i,t,bar){
   if(pat.hat[i]&&live('hat',bar))hat(t,P.hat,false);
   if(pat.open[i]&&live('open',bar))hat(t,P.open,true);
   if(live('acid',bar))acid(i,t,sd);
+  if(pat.vox[i]&&live('vox',bar))vox(i,t,sd);
 }
 
 /* ---------- clock: schedule 100 ms ahead on the audio clock, poll every 25 ms ----------
@@ -355,18 +402,30 @@ function draw(){
         const l=Math.min(Math.max(P[v].decay/sd,.18),v==='open'?2.5:.8);cx.moveTo(x,mid);cx.lineTo(Math.min(x+l*sw,X(16)),mid);
       }else if(v==='clap'){
         cx.moveTo(x,top);cx.lineTo(x+sw*.35,top);cx.lineTo(x+sw*.6,bot);cx.lineTo(x+sw*(.6+Math.min(P.clap.decay/sd,1)*.35),bot);
+      }else if(v==='vox'){
+        // a vowel glyph that slides to where the talk knob takes it
+        const p=P.vox,v1=p.vowel+p.talk<=4?p.vowel+p.talk:Math.max(0,p.vowel-p.talk),l=Math.min(p.decay/sd,3,16-i);
+        cx.font='italic 15px "STIX Two Text",Times,serif';cx.fillText('aeiou'[Math.round(p.vowel)],x,mid+4);
+        cx.moveTo(x+10,mid);cx.quadraticCurveTo(x+sw*l*.5,mid+(v1-p.vowel)*2.5,x+sw*l,mid);
       }else{
-        const y=acidY(s.d),nx=pat.acid[(i+1)%16];cx.lineWidth=s.a?4.2:2;
-        cx.moveTo(x,y);cx.lineTo(x+sw*.62,y);if(s.s&&nx&&i<15)cx.lineTo(x+sw,acidY(nx.d));else if(s.s)cx.lineTo(x+sw*.95,y);
+        const nx=pat.acid[(i+1)%16];cx.lineWidth=s.a?4.2:2;
+        for(const d of degs(s)){const y=acidY(d);cx.moveTo(x,y);cx.lineTo(x+sw*.62,y)}
+        const y=acidY(s.d);if(s.s&&nx&&i<15){cx.moveTo(x+sw*.62,y);cx.lineTo(x+sw,acidY(nx.d))}else if(s.s){cx.moveTo(x+sw*.62,y);cx.lineTo(x+sw*.95,y)}
       }
       cx.stroke();
     }
+  }
+  // keyboard: letters a–k beside the scale rows, caret under the step the keys write to
+  if(ON.acid&&(sel==='acid'||sel==='vox')){
+    cx.globalAlpha=.5;cx.font='italic 12px "STIX Two Text",Times,serif';
+    for(let d=0;d<8;d++)cx.fillText(KEYS[d],X(0)-24,acidY(d)+4);
+    const x=X(kc)+sw*.3,y=Y(BAND.acid[1])+9;cx.globalAlpha=.9;cx.beginPath();cx.moveTo(x,y-5);cx.lineTo(x-4,y+2);cx.lineTo(x+4,y+2);cx.fill();
   }
   // ghost: where a click would land
   if(hover&&!drag){
     const {i,v,d}=hover,[b0,b1]=BAND[v],x=X(i)+sw*.3;
     const y=v==='acid'?acidY(d):v==='kick'||v==='bass'?Y(b1):(Y(b0)+Y(b1))/2;
-    const has=v==='acid'?pat.acid[i]&&pat.acid[i].d===d:pat[v][i];
+    const has=v==='acid'?pat.acid[i]&&degs(pat.acid[i]).includes(d):pat[v][i];
     cx.globalAlpha=.55;cx.lineWidth=1.2;cx.beginPath();cx.arc(x,y,has?7:5,0,7);cx.stroke();
     if(v==='acid'&&!pat.acid[i]){cx.globalAlpha=.6;cx.font='italic 12px "STIX Two Text",Times,serif';cx.fillText(NOTE[(scene.root+SCALE()[d])%12],x+9,y-6)}
   }
@@ -398,7 +457,7 @@ function hit(e){
 }
 function preview(v,i){
   if(!ac||playing)return;const t=ac.currentTime+.01;ac.resume();
-  ({kick,bass,clap,hat:t=>hat(t,P.hat,false),open:t=>hat(t,P.open,true),acid:t=>{acid(i,t,60/bpm/4);N.vca.gain.setTargetAtTime(0,t+.25,.012)}})[v](t);
+  ({kick,bass,clap,hat:t=>hat(t,P.hat,false),open:t=>hat(t,P.open,true),vox:t=>vox(i,t,60/bpm/4),acid:t=>{acid(i,t,60/bpm/4);N.vca.gain.setTargetAtTime(0,t+.25,.012)}})[v](t);
 }
 cv.addEventListener('contextmenu',e=>e.preventDefault());
 cv.addEventListener('pointerdown',e=>{
@@ -408,6 +467,7 @@ cv.addEventListener('pointerdown',e=>{
   if(v!==sel)select(v);
   cv.setPointerCapture(e.pointerId);
   if(v==='acid'){
+    kc=i;
     const s=pat.acid[i];
     if(s&&(e.shiftKey||e.altKey)){if(e.shiftKey)s.a=!s.a;else s.s=!s.s;preview('acid',i);return}
     if(s&&e.button===2){pat.acid[i]=null;return}
@@ -428,14 +488,14 @@ cv.addEventListener('pointermove',e=>{
   if(drag.mode==='move'){
     if(h.i===drag.at&&h.d===drag.d)return;
     // notes the drag passes over come back; only the drop spot is replaced
-    const note=drag.note;note.d=h.d;
+    const note=drag.note,dd=h.d-note.d;note.d=h.d;if(note.c)note.c=note.c.map(x=>clampD(x+dd));
     for(let k=0;k<16;k++)pat.acid[k]=drag.snap[k];
     pat.acid[h.i]=note;
     if(h.d!==drag.d)preview('acid',h.i);
     drag.at=h.i;drag.d=h.d;drag.moved=true;
   }else if(drag.v==='acid'){
     const s=pat.acid[h.i];
-    if(h.i===drag.at){if(s&&s.d!==h.d){s.d=h.d;preview('acid',h.i)}}   // same step: retune while dragging
+    if(h.i===drag.at){if(s&&s.d!==h.d){s.d=h.d;delete s.c;preview('acid',h.i)}}   // same step: retune while dragging
     else if(!s){pat.acid[h.i]={d:h.d,a:false,s:false};preview('acid',h.i)}
     drag.at=h.i;
   }else if(h.v===drag.v&&h.i!==drag.at){
@@ -456,6 +516,7 @@ const SOUNDS={
   clap:{'909':{tone:1100,decay:.22},'tight':{tone:1500,decay:.1},'big':{tone:950,decay:.5}},
   hat:{'808':{tone:8500,decay:.045},'bright':{tone:11500,decay:.035},'dark':{tone:6000,decay:.06}},
   open:{'short':{tone:9000,decay:.15},'808':{tone:8000,decay:.3},'long':{tone:9000,decay:.7}},
+  vox:{'robot':{vowel:0,talk:0,oct:1,decay:.25},'choir':{vowel:3,talk:.6,oct:1,decay:.8},'yoy':{vowel:4,talk:3,oct:1,decay:.35},'wah':{vowel:4,talk:4,oct:0,decay:.3},'alien':{vowel:2,talk:2.5,oct:2,decay:.2},'monk':{vowel:3,talk:.3,oct:0,decay:.9}},
   acid:{'classic':{cut:360,res:13,env:2400,decay:.22},'squelch':{cut:250,res:20,env:4000,decay:.35},'mellow':{cut:500,res:6,env:1200,decay:.3},'screaming':{cut:700,res:24,env:5000,decay:.45},'dark':{cut:150,res:16,env:1500,decay:.15}}
 };
 const TUNES={
@@ -470,9 +531,11 @@ const TUNES={
   minimal:'- - 0 - - - - 4a - - 0 - - - - -'
 };
 function renderPresets(){
-  let h=`<span>sound</span>`+Object.keys(SOUNDS[sel]).map(k=>`<button data-s="${k}">${k}</button>`).join('');
+  let h=sel==='acid'?`<span>synth</span>`+SYNTHS.map((n,k)=>`<button data-y="${k}" aria-pressed="${P.acid.type===k}">${n}</button>`).join('')+'<i class="br"></i>':'';
+  h+=`<span>sound</span>`+Object.keys(SOUNDS[sel]).map(k=>`<button data-s="${k}">${k}</button>`).join('');
   if(sel==='acid')h+=`<i class="gap"></i><span>tune</span>`+Object.keys(TUNES).map(k=>`<button data-t="${k}">${k}</button>`).join('');
   $('presets').innerHTML=h;
+  for(const el of $('presets').querySelectorAll('[data-y]'))el.onclick=()=>{P.acid.type=+el.dataset.y;if(ac)N.vca.gain.setTargetAtTime(0,ac.currentTime,.01);select('acid');preview('acid',pat.acid.findIndex(Boolean))};
   for(const el of $('presets').querySelectorAll('[data-s]'))el.onclick=()=>{Object.assign(P[sel],SOUNDS[sel][el.dataset.s]);select(sel);applyParams();preview(sel,pat[sel].findIndex(Boolean))};
   for(const el of $('presets').querySelectorAll('[data-t]'))el.onclick=()=>{a(TUNES[el.dataset.t]).forEach((n,i)=>pat.acid[i]=n);
     for(const b of $('presets').querySelectorAll('[data-t]'))b.setAttribute('aria-pressed',b===el)};
@@ -486,17 +549,29 @@ const FORM={
   bass:p=>`<i>y</i> = lp<sub>${fmt(p.cut)}</sub>(saw(${fmt(ROOT())}<i>t</i>)) · <i>e</i><sup>−3<i>t</i>/${fmt(p.decay)}</sup> · (1 − 0.85 kick)`,
   clap:p=>`<i>y</i> = bp<sub>${fmt(p.tone)}</sub>(noise) · [ Σ<sub><i>k</i>=0..3</sub> (1 − (<i>t</i> − 0.011<i>k</i>)/0.009)<sub>+</sub> + 0.75<i>e</i><sup>−5(<i>t</i>−0.034)/${fmt(p.decay)}</sup> ]`,
   hat:p=>`<i>y</i> = hp( bp<sub>${fmt(p.tone*.835)}</sub>(<i>m</i>) + ¼ bp<sub>3440</sub>(<i>m</i>) ) · <i>e</i><sup>−5<i>t</i>/${fmt(p.decay)}</sup> ,&emsp;<i>m</i> = Σ<sub><i>k</i>=1..6</sub> sq(<i>f<sub>k</sub>t</i>) ,&emsp;<i>f</i> = 205, 304, 370, 523, 540, 800`,
-  acid:p=>`<i>y</i> = lp<sup>4</sup><sub><i>c</i>(<i>t</i>)</sub>(saw(${fmt(ROOT()*2)} · 2<sup>${fr('<i>n</i>','12')}</sup><i>t</i>)) ,&emsp;<i>c</i>(<i>t</i>) = ${fmt(p.cut)} + ${fmt(p.env)}<i>e</i><sup>−3<i>t</i>/${fmt(p.decay)}</sup> ,&emsp;<i>Q</i> = ${fmt(p.res)}`
+  vox:p=>{const F0=formants(p.vowel).map(Math.round);return `<i>y</i> = Σ<sub><i>k</i>=1..3</sub> <i>g<sub>k</sub></i> · bp<sub><i>F<sub>k</sub></i>(<i>v</i>)</sub>(saw(<i>f</i>) + saw(<i>f</i>·2<sup>7/1200</sup>)) · env ,&emsp;<i>F</i>(${'aeiou'[Math.round(p.vowel)]}) = ${F0.join(', ')} Hz ,&emsp;<i>v</i>(<i>t</i>) = ${fmt(p.vowel)} → ${fmt(p.vowel+p.talk<=4?p.vowel+p.talk:Math.max(0,p.vowel-p.talk))}`},
+  acid:p=>p.type?SYNTHF[p.type](p):`<i>y</i> = lp<sup>4</sup><sub><i>c</i>(<i>t</i>)</sub>(saw(${fmt(ROOT()*2)} · 2<sup>${fr('<i>n</i>','12')}</sup><i>t</i>)) ,&emsp;<i>c</i>(<i>t</i>) = ${fmt(p.cut)} + ${fmt(p.env)}<i>e</i><sup>−3<i>t</i>/${fmt(p.decay)}</sup> ,&emsp;<i>Q</i> = ${fmt(p.res)}`
 };
 FORM.open=FORM.hat;
+const env=p=>`<i>e</i><sup>−4<i>t</i>/${fmt(p.decay)}</sup>`;
+const SYNTHF={
+  1:p=>`<i>y</i> = Σ<sub>notes</sub> sin(2π<i>ft</i> + <i>I</i>(<i>t</i>) sin(2π·3.5<i>ft</i>)) · ${env(p)} ,&emsp;<i>I</i>(<i>t</i>) = ${fmt(p.env/600)}<i>e</i><sup>−3<i>t</i>/${fmt(p.decay)}</sup>`,
+  2:p=>`<i>y</i> = Σ<sub>notes</sub> lp<sub>${fmt(p.cut)} + ${fmt(p.env)}<i>e</i><sup>−8<i>t</i>/${fmt(p.decay)}</sup></sub>(saw(<i>f</i>)) · ${env(p)}`,
+  3:p=>`<i>y</i> = Σ<sub>notes</sub> lp<sub><i>c</i>(<i>t</i>)</sub>(saw(<i>f</i>·2<sup>−9/1200</sup>) + saw(<i>f</i>·2<sup>9/1200</sup>)) · ${env(p)} ,&emsp;<i>c</i>(<i>t</i>) = ${fmt(p.cut)} + ${fmt(p.env)}<i>e</i><sup>−4<i>t</i>/${fmt(p.decay)}</sup>`,
+  4:p=>`<i>y</i> = Σ<sub>notes</sub> lp<sub><i>c</i>(<i>t</i>)</sub>( Σ<sub><i>k</i>=1..7</sub> saw(<i>f</i>(1 + 0.18<i>o<sub>k</sub></i>)) ) · ${env(p)} ,&emsp;<i>o</i> = 0, ±0.02, ±0.06, ±0.11`,
+  5:p=>`<i>y</i> = Σ<sub>notes</sub> lp<sub>${fmt(p.cut)}</sub>(sq(<i>f</i>(1 + 0.012 sin 2π·5.5<i>t</i>))) · gate`
+};
+const KEYS='asdfghjk';                    // computer keyboard → scale degrees 0–7
+let kc=0;                                 // the step the keys write to
 const $=id=>document.getElementById(id);
 function formula(){$('formula').innerHTML=FORM[sel](P[sel])}
 function select(v){
   sel=v;
   for(const el of $('voices').children)el.setAttribute('aria-pressed',el.dataset.v===v);
   for(const el of $('side').children)el.classList.toggle('sel',el.dataset.v===v);
-  $('knobs').innerHTML=DEF[v].map(d=>`<div class="k"><label for="k-${d[0]}">${d[1]}<output id="o-${d[0]}">${fmt(P[v][d[0]])} ${d[5]}</output></label><input id="k-${d[0]}" type="range" min="${d[2]}" max="${d[3]}" step="${(d[3]-d[2])/200}" value="${P[v][d[0]]}"></div>`).join('');
-  for(const d of DEF[v])$('k-'+d[0]).oninput=e=>{P[v][d[0]]=+e.target.value;$('o-'+d[0]).textContent=fmt(P[v][d[0]])+' '+d[5];formula();applyParams()};
+  const show=(k,x)=>k==='vowel'?'aeiou'[Math.round(x)]:k==='oct'?Math.round(x):fmt(x);
+  $('knobs').innerHTML=DEF[v].map(d=>`<div class="k"><label for="k-${d[0]}">${d[1]}<output id="o-${d[0]}">${show(d[0],P[v][d[0]])} ${d[5]}</output></label><input id="k-${d[0]}" type="range" min="${d[2]}" max="${d[3]}" step="${(d[3]-d[2])/200}" value="${P[v][d[0]]}"></div>`).join('');
+  for(const d of DEF[v])$('k-'+d[0]).oninput=e=>{P[v][d[0]]=+e.target.value;$('o-'+d[0]).textContent=show(d[0],P[v][d[0]])+' '+d[5];formula();applyParams()};
   formula();renderPresets();
 }
 function setScene(s){
@@ -516,6 +591,7 @@ function randomise(v){
     else if(v==='clap')o[i]=i===4||i===12?1:rnd(.06)?1:0;
     else if(v==='hat')o[i]=rnd(.6)?1:0;
     else if(v==='open')o[i]=i%4===2?(rnd(.85)?1:0):rnd(.05)?1:0;
+    else if(v==='vox')o[i]=rnd(.18)?1:0;
     else o[i]=rnd(.65)?{d:[0,0,0,0,0,1,2,3,4,5,6,7][Math.random()*12|0],a:rnd(.3),s:rnd(.25)}:null;
   }
 }
@@ -527,21 +603,6 @@ for(const el of $('voices').children)el.onclick=()=>select(el.dataset.v);
 $('bpm').oninput=e=>{bpm=scene.bpm=+e.target.value;$('bpmv').textContent=bpm+' bpm';applyParams()};
 $('play').onclick=toggle;
 $('swing').oninput=e=>{scene.swing=+e.target.value;$('swingv').textContent='swing '+scene.swing+'%'};
-
-/* record: capture the master output, download when stopped */
-let rec=null;
-$('rec').onclick=()=>{
-  initAudio();
-  if(rec){rec.stop();return}
-  const dest=ac.createMediaStreamDestination();N.out.connect(dest);
-  const chunks=[],r=new MediaRecorder(dest.stream);
-  r.ondataavailable=e=>chunks.push(e.data);
-  r.onstop=()=>{N.out.disconnect(dest);const type=r.mimeType||'audio/webm',ext=type.includes('ogg')?'ogg':type.includes('mp4')?'m4a':'webm';
-    const url=URL.createObjectURL(new Blob(chunks,{type})),el=document.createElement('a');el.href=url;el.download=`techno-${scene.name}-${bpm}bpm.${ext}`;el.click();
-    setTimeout(()=>URL.revokeObjectURL(url),5000);rec=null;$('rec').textContent='record';$('rec').classList.remove('on')};
-  r.start();rec=r;$('rec').textContent='● stop & save';$('rec').classList.add('on');
-  if(!playing)toggle();
-};
 
 /* autosave: patterns, sounds, sequence and switches stay after a reload */
 const KEY='techno-function-synth';
@@ -569,7 +630,7 @@ for(const el of $('side').children)el.onclick=()=>{
   renderSeq();
 };
 function renderSeq(){
-  $('seq').hidden=nBars===1;$('seq').style.setProperty('--n',nBars);
+  $('seq').style.setProperty('--n',nBars);
   for(const el of $('bars').querySelectorAll('button'))el.setAttribute('aria-pressed',+el.textContent===nBars);
   let h='<div class="lab"></div>'+Array.from({length:nBars},(_,i)=>`<div class="num" data-b="${i}" title="start from bar ${i+1}">${i+1}</div>`).join('');
   for(const v of ROWS)h+=`<div class="lab${ON[v]?'':' off'}">${v}</div>`+scene.arr[v].map((x,i)=>`<div class="c${x?' on':''}${ON[v]?'':' off'}" data-v="${v}" data-b="${i}" title="${v}, bar ${i+1}"></div>`).join('');
@@ -582,7 +643,25 @@ $('seq').addEventListener('click',e=>{
   if(c){const a=scene.arr[c.dataset.v],i=+c.dataset.b;a[i]=a[i]?0:1;c.classList.toggle('on',!!a[i])}
   else if(n)nextBar=+n.dataset.b;   // jump there at the end of this bar (or start there)
 });
-addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();if(!e.repeat)toggle()}});
+/* keyboard: a s d f g h j k are the 8 scale notes. Hold several for a chord.
+   They write to the step under the caret; ← → move it, backspace clears it. */
+const held=new Set();
+addEventListener('keydown',e=>{
+  if(e.code==='Space'){e.preventDefault();if(!e.repeat)toggle();return}
+  if(e.metaKey||e.ctrlKey||e.altKey||/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)&&e.target.type!=='range')return;
+  const k=e.key.toLowerCase(),d=KEYS.indexOf(k);
+  if(d>=0){
+    e.preventDefault();if(e.repeat)return;
+    held.add(d);initAudio();if(!ON.acid)return;
+    if(sel!=='acid'&&sel!=='vox')select('acid');
+    const ds=[...held].sort((x,y)=>x-y),old=pat.acid[kc];
+    pat.acid[kc]={d:ds[0],a:old?old.a:false,s:old?old.s:false};if(ds.length>1)pat.acid[kc].c=ds;
+    preview('acid',kc);
+  }else if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();kc=(kc+(e.key==='ArrowRight'?1:15))%16}
+  else if(e.key==='Backspace'||e.key==='Delete'){e.preventDefault();pat.acid[kc]=null}
+});
+addEventListener('keyup',e=>{const d=KEYS.indexOf(e.key.toLowerCase());if(d>=0)held.delete(d)});
+addEventListener('blur',()=>held.clear());
 addEventListener('keyup',e=>{if(e.code==='Space')e.preventDefault()});
 {const i=load();const v=sel;setScene(SCENES[i]);select(v)}draw();
 </script>

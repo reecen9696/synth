@@ -11,8 +11,11 @@ Open `index.html` in a browser, or serve the folder:
 ## Use
 
 - Pick a scene at the top. Each one is a techno style with its own tempo, swing, key, sound and colours: 150, detroit, berlin, minimal, dub, acid, hard, industrial, hypnotic, electro, ambient.
-- Click the graph to add or remove hits. One bar, 16 steps.
-- Acid: click a note again for accent, again for slide, again to remove.
+- Click the graph to add a note, click it again to remove. Drag a note to move it, drag across steps to paint. Shift-click accent, Alt-click slide.
+- Keyboard: `a s d f g h j k` are the 8 scale notes. Hold several for a chord. ← → move the step (the caret under the acid row), Backspace clears it.
+- Acid synth: pick 303, FM bell, pluck, stab, supersaw or square. Everything except the 303 plays chords.
+- Vox: a talking synth on top. A saw through three vowel formant filters (a e i o u); talk sweeps the vowel during each note. It follows the acid line's pitch.
+- Sequence (top): 1/2/4/8/16 bars. Click a cell to mute or play a voice in that bar, click a bar number to jump there.
 - Pick a voice to see its formula and sliders.
 - Space plays and stops.
 
@@ -21,7 +24,7 @@ Open `index.html` in a browser, or serve the folder:
 - `DEF`: parameters and ranges per voice
 - `SCENES`: style, tempo, swing, root note, mode, colours, sound settings and pattern
 - `initAudio`: master bus, sidechain duck, delay, reverb, rumble chain, acid voice
-- `kick` `bass` `clap` `hat` `acid`: one function per voice
+- `kick` `bass` `clap` `hat` `acid` `polyNote` `vox`: one function per voice
 - `tick`: lookahead scheduler (25 ms timer, 100 ms window on the audio clock) with swing
 - `draw`: canvas graph and playhead
 - `FORM`: formula text per voice
