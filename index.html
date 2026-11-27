@@ -103,7 +103,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radiu
 
   <div id="formula" aria-live="off"></div>
   <div id="knobs"></div>
-  <p class="hint">Click the graph to add or remove hits. On acid, click a note again for accent, again for slide. The switches on the left show or hide a voice. Bars sets how long the sequence is; click it to choose which voices play in each bar. Space plays.</p>
+  <p class="hint">Click to add a note, click it again to remove. Drag a note to move it, drag across steps to paint. Shift-click: accent. Alt-click: slide. The switches on the left show or hide a voice. Bars sets how long the sequence is; click it to choose which voices play in each bar. Space plays.</p>
 </div>
 
 <script>
@@ -353,6 +353,14 @@ function draw(){
       cx.stroke();
     }
   }
+  // ghost: where a click would land
+  if(hover&&!drag){
+    const {i,v,d}=hover,[b0,b1]=BAND[v],x=X(i)+sw*.3;
+    const y=v==='acid'?acidY(d):v==='kick'||v==='bass'?Y(b1):(Y(b0)+Y(b1))/2;
+    const has=v==='acid'?pat.acid[i]&&pat.acid[i].d===d:pat[v][i];
+    cx.globalAlpha=.55;cx.lineWidth=1.2;cx.beginPath();cx.arc(x,y,has?7:5,0,7);cx.stroke();
+    if(v==='acid'&&!pat.acid[i]){cx.globalAlpha=.6;cx.font='italic 12px "STIX Two Text",Times,serif';cx.fillText(NOTE[(scene.root+SCALE()[d])%12],x+9,y-6)}
+  }
   // playhead
   let pos=0;
   if(playing&&ac){const now=ac.currentTime;while(queue.length>1&&queue[1].t<=now)queue.shift();
@@ -366,21 +374,69 @@ let shownBar=-1;
 // keep the switches level with their bands
 function placeSide(){for(const el of $('side').children){const [b0,b1]=BAND[el.dataset.v];el.style.top=Y((b0+b1)/2)+'px'}}
 
-cv.addEventListener('pointerdown',e=>{
+/* ---------- editing on the graph ----------
+   click empty: add · click a note: remove · drag a note: move it (up/down = pitch, sideways = time)
+   drag across empty steps: paint · shift-click: accent · alt-click: slide */
+let drag=null,hover=null;
+function hit(e){
   const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
-  const i=Math.floor((x-L)/((W-L-R)/16));if(i<0||i>15)return;
+  const i=Math.floor((x-L)/((W-L-R)/16));if(i<0||i>15)return null;
   const n=(y-T)/(H-T-B);let v=null,best=9;
   for(const k in BAND){if(!ON[k])continue;const [b0,b1]=BAND[k],d=n<b0?b0-n:n>b1?n-b1:0;if(d<best){best=d;v=k}}
-  if(!v)return;
-  if(v!==sel){select(v)}
+  if(!v)return null;
+  const [b0,b1]=BAND.acid,d=Math.max(0,Math.min(7,Math.round((b1-n)/(b1-b0)*7)));
+  return {i,v,d};
+}
+function preview(v,i){
+  if(!ac||playing)return;const t=ac.currentTime+.01;ac.resume();
+  ({kick,bass,clap,hat:t=>hat(t,P.hat,false),open:t=>hat(t,P.open,true),acid:t=>{acid(i,t,60/bpm/4);N.vca.gain.setTargetAtTime(0,t+.25,.012)}})[v](t);
+}
+cv.addEventListener('contextmenu',e=>e.preventDefault());
+cv.addEventListener('pointerdown',e=>{
+  const h=hit(e);if(!h)return;
+  initAudio();
+  const {i,v,d}=h;
+  if(v!==sel)select(v);
+  cv.setPointerCapture(e.pointerId);
   if(v==='acid'){
-    const [b0,b1]=BAND.acid,d=Math.max(0,Math.min(7,Math.round((b1-n)/(b1-b0)*7))),s=pat.acid[i];
-    if(!s||s.d!==d)pat.acid[i]={d,a:false,s:false};
-    else if(!s.a&&!s.s)s.a=true;else if(s.a&&!s.s){s.a=false;s.s=true}else pat.acid[i]=null;
-  }else pat[v][i]=pat[v][i]?0:1;
-  if(ac&&!playing&&pat[v][i]){const t=ac.currentTime+.01;ac.resume();
-    ({kick,bass,clap,hat:t=>hat(t,P.hat,false),open:t=>hat(t,P.open,true),acid:t=>{acid(i,t,60/bpm/4);N.vca.gain.setTargetAtTime(0,t+.25,.012)}})[v](t)}
+    const s=pat.acid[i];
+    if(s&&(e.shiftKey||e.altKey)){if(e.shiftKey)s.a=!s.a;else s.s=!s.s;preview('acid',i);return}
+    if(s&&e.button===2){pat.acid[i]=null;return}
+    if(s){const snap=pat.acid.slice();snap[i]=null;drag={mode:'move',at:i,d:s.d,moved:false,note:s,snap};return}
+    pat.acid[i]={d,a:e.shiftKey,s:e.altKey};preview('acid',i);
+    drag={mode:'paint',v,at:i};
+  }else{
+    const val=e.button===2?0:pat[v][i]?0:1;
+    pat[v][i]=val;if(val)preview(v,i);
+    drag={mode:'paint',v,val,at:i};
+  }
 });
+cv.addEventListener('pointermove',e=>{
+  const h=hit(e);
+  hover=drag?null:h;
+  cv.style.cursor=drag&&drag.mode==='move'?'grabbing':h&&h.v==='acid'&&pat.acid[h.i]?'grab':'crosshair';
+  if(!drag||!h)return;
+  if(drag.mode==='move'){
+    if(h.i===drag.at&&h.d===drag.d)return;
+    // notes the drag passes over come back; only the drop spot is replaced
+    const note=drag.note;note.d=h.d;
+    for(let k=0;k<16;k++)pat.acid[k]=drag.snap[k];
+    pat.acid[h.i]=note;
+    if(h.d!==drag.d)preview('acid',h.i);
+    drag.at=h.i;drag.d=h.d;drag.moved=true;
+  }else if(drag.v==='acid'){
+    const s=pat.acid[h.i];
+    if(h.i===drag.at){if(s&&s.d!==h.d){s.d=h.d;preview('acid',h.i)}}   // same step: retune while dragging
+    else if(!s){pat.acid[h.i]={d:h.d,a:false,s:false};preview('acid',h.i)}
+    drag.at=h.i;
+  }else if(h.v===drag.v&&h.i!==drag.at){
+    pat[drag.v][h.i]=drag.val;drag.at=h.i;
+  }
+});
+const endDrag=()=>{if(drag&&drag.mode==='move'&&!drag.moved)pat.acid[drag.at]=null;drag=null};
+cv.addEventListener('pointerup',endDrag);
+cv.addEventListener('pointercancel',()=>{drag=null});
+cv.addEventListener('pointerleave',()=>{hover=null});
 
 /* ---------- formula and controls ---------- */
 const fmt=v=>v>=100?Math.round(v):v>=10?v.toFixed(1):v.toFixed(2);
