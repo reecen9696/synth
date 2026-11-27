@@ -131,7 +131,7 @@ const DEF={
   hat:[['tone','tone',5000,13000,8500,'Hz'],['decay','decay',.015,.12,.045,'s'],['level','level',0,1,.4,'']],
   open:[['tone','tone',5000,13000,8000,'Hz'],['decay','decay',.1,.8,.3,'s'],['level','level',0,1,.35,'']],
   acid:[['cut','cutoff',100,2000,360,'Hz'],['res','resonance',.5,24,13,''],['env','env mod',0,5000,2400,'Hz'],['decay','decay',.05,.8,.22,'s'],['level','level',0,1,.5,'']],
-  vox:[['vowel','vowel',0,4,0,''],['talk','talk',0,4,1.5,''],['oct','octave',0,2,1,''],['decay','length',.05,1,.3,'s'],['level','level',0,1,.55,'']]
+  vox:[['vowel','vowel',0,4,3.6,''],['talk','talk',0,4,0,''],['oct','octave',0,2,0,''],['decay','length',.1,3,2.4,'s'],['level','level',0,1,.6,'']]
 };
 /* synths for the acid voice: 0 is the mono TB-303, the rest are polyphonic (chords work) */
 const SYNTHS=['303','fm bell','pluck','stab','supersaw','square'];
@@ -187,7 +187,7 @@ const SCENES=[
 const PICK={1:[12],2:[4,12],4:[0,4,9,12],8:[0,2,4,6,8,10,12,14],16:[...Array(16).keys()]};
 let nBars=4;
 const arrange=s=>{s.arr={};for(const v of TABS)s.arr[v]=PICK[nBars].map(i=>ARR[v][i]==='x'?1:0)};
-for(const s of SCENES){s.pat.vox=s.pat.vox||a('- - 4 - - - - - - - 7 - - - 4s 3');s.P=defaults();for(const v in s.set)Object.assign(s.P[v],s.set[v]);arrange(s)}
+for(const s of SCENES){s.pat.vox=s.pat.vox||a('0 - - - - - - - 4 - - - - - - -');s.P=defaults();for(const v in s.set)Object.assign(s.P[v],s.set[v]);arrange(s)}
 let scene=SCENES[0],pat=scene.pat,P=scene.P,bpm=scene.bpm,sel='kick';
 const SCALE=()=>MODES[scene.mode];
 const ROOT=()=>hz(scene.root);
@@ -329,10 +329,10 @@ function voxNote(t,deg,acc,n){
   const v0=p.vowel,v1=v0+p.talk<=4?v0+p.talk:Math.max(0,v0-p.talk),F0=formants(v0),F1=formants(v1);
   const src=G(.5),g=G(0),lv=G(p.level*acc/Math.sqrt(n));
   const a=osc('sawtooth',f),b2=osc('sawtooth',f);b2.detune.value=7;
-  const vib=osc('sine',5.2),vg=G(0);vg.gain.setValueAtTime(0,t);vg.gain.linearRampToValueAtTime(f*.012,t+dur*.6);chain(vib,vg,a.frequency);vg.connect(b2.frequency);
+  const vib=osc('sine',5.2),vg=G(0);vg.gain.setValueAtTime(0,t);vg.gain.linearRampToValueAtTime(f*(dur>.8?.005:.012),t+dur*.6);chain(vib,vg,a.frequency);vg.connect(b2.frequency);
   a.connect(src);b2.connect(src);
   for(let k=0;k<3;k++){const bp=F('bandpass',F0[k],F0[k]/FBW[k]);bp.frequency.setValueAtTime(F0[k],t);bp.frequency.linearRampToValueAtTime(F1[k],t+dur);chain(src,bp,G(FG[k]*3.5),g)}
-  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(1,t+.015);g.gain.setTargetAtTime(0,t+dur*.75,dur*.12);
+  const atk=Math.min(.25,Math.max(.015,dur*.1));g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(1,t+atk);g.gain.setTargetAtTime(0,t+dur*.75,dur*.12);
   chain(g,lv,N.duck);const rv=G(.35);lv.connect(rv);rv.connect(N.vSend);const dl=G(.25);lv.connect(dl);dl.connect(N.dSend);
   for(const x of [a,b2,vib]){x.start(t);x.stop(t+dur*1.6+.1)}
 }
@@ -409,7 +409,7 @@ function draw(){
         cx.moveTo(x,top);cx.lineTo(x+sw*.35,top);cx.lineTo(x+sw*.6,bot);cx.lineTo(x+sw*(.6+Math.min(P.clap.decay/sd,1)*.35),bot);
       }else{
         const nx=pat[v][(i+1)%16],ny=d=>noteY(v,d);cx.lineWidth=s.a?4.2:2;
-        const len=v==='vox'?Math.min(P.vox.decay/sd,1.6):.62;
+        const len=v==='vox'?Math.min(P.vox.decay/sd,8,16-i):.62;
         for(const d of degs(s)){const y=ny(d);cx.moveTo(x,y);cx.lineTo(x+sw*len,y)}
         if(v==='vox'){cx.font='italic 12px "STIX Two Text",Times,serif';cx.fillText('aeiou'[Math.round(P.vox.vowel)],x-1,ny(s.d)-5)}
         const y=ny(s.d);if(s.s&&nx&&i<15){cx.moveTo(x+sw*.62,y);cx.lineTo(x+sw,ny(nx.d))}else if(s.s){cx.moveTo(x+sw*.62,y);cx.lineTo(x+sw*.95,y)}
@@ -521,7 +521,7 @@ const SOUNDS={
   clap:{'909':{tone:1100,decay:.22},'tight':{tone:1500,decay:.1},'big':{tone:950,decay:.5}},
   hat:{'808':{tone:8500,decay:.045},'bright':{tone:11500,decay:.035},'dark':{tone:6000,decay:.06}},
   open:{'short':{tone:9000,decay:.15},'808':{tone:8000,decay:.3},'long':{tone:9000,decay:.7}},
-  vox:{'robot':{vowel:0,talk:0,oct:1,decay:.25},'choir':{vowel:3,talk:.6,oct:1,decay:.8},'yoy':{vowel:4,talk:3,oct:1,decay:.35},'wah':{vowel:4,talk:4,oct:0,decay:.3},'alien':{vowel:2,talk:2.5,oct:2,decay:.2},'monk':{vowel:3,talk:.3,oct:0,decay:.9}},
+  vox:{'deep':{vowel:3.6,talk:0,oct:0,decay:2.4,level:.6},'monk':{vowel:3,talk:.3,oct:0,decay:1.4},'choir':{vowel:3,talk:.4,oct:1,decay:1.2},'robot':{vowel:0,talk:0,oct:1,decay:.25},'yoy':{vowel:4,talk:3,oct:1,decay:.35},'wah':{vowel:4,talk:4,oct:0,decay:.3}},
   acid:{'classic':{cut:360,res:13,env:2400,decay:.22},'squelch':{cut:250,res:20,env:4000,decay:.35},'mellow':{cut:500,res:6,env:1200,decay:.3},'screaming':{cut:700,res:24,env:5000,decay:.45},'dark':{cut:150,res:16,env:1500,decay:.15}}
 };
 const TUNES={
@@ -535,14 +535,24 @@ const TUNES={
   octaves:'0 7 0 7a 0 7 0 7s 0 7 0 7a 3 7 4 7s',
   minimal:'- - 0 - - - - 4a - - 0 - - - - -'
 };
+/* vox tunes: few long notes, mostly root (0) and fifth (4) */
+const VOXTUNES={
+  drone:'0 - - - - - - - - - - - - - - -',
+  'root fifth':'0 - - - - - - - 4 - - - - - - -',
+  chant:'0 - - - 0 - - - 3 - - - 0 - - -',
+  call:'- - - - 0 - - - - - - - 4 - - -',
+  rise:'0 - - - - - - - 2 - - - 4 - - -',
+  low:'- - - - - - - - 0 - - - - - - -'
+};
 function renderPresets(){
   let h=sel==='acid'?`<span>synth</span>`+SYNTHS.map((n,k)=>`<button data-y="${k}" aria-pressed="${P.acid.type===k}">${n}</button>`).join('')+'<i class="br"></i>':'';
   h+=Object.keys(SOUNDS[sel]).map(k=>`<button data-s="${k}">${k}</button>`).join('');
-  if(MEL(sel))h+=`<i class="gap"></i><span>tune</span>`+Object.keys(TUNES).map(k=>`<button data-t="${k}">${k}</button>`).join('');
+  const TT=sel==='vox'?VOXTUNES:TUNES;
+  if(MEL(sel))h+=`<i class="gap"></i><span>tune</span>`+Object.keys(TT).map(k=>`<button data-t="${k}">${k}</button>`).join('');
   $('presets').innerHTML=h;
   for(const el of $('presets').querySelectorAll('[data-y]'))el.onclick=()=>{P.acid.type=+el.dataset.y;if(ac)N.vca.gain.setTargetAtTime(0,ac.currentTime,.01);select('acid');preview('acid',pat.acid.findIndex(Boolean))};
   for(const el of $('presets').querySelectorAll('[data-s]'))el.onclick=()=>{Object.assign(P[sel],SOUNDS[sel][el.dataset.s]);select(sel);applyParams();preview(sel,pat[sel].findIndex(Boolean))};
-  for(const el of $('presets').querySelectorAll('[data-t]'))el.onclick=()=>{const v=sel;a(TUNES[el.dataset.t]).forEach((n,i)=>pat[v][i]=n);
+  for(const el of $('presets').querySelectorAll('[data-t]'))el.onclick=()=>{const v=sel;a((v==='vox'?VOXTUNES:TUNES)[el.dataset.t]).forEach((n,i)=>pat[v][i]=n);
     for(const b of $('presets').querySelectorAll('[data-t]'))b.setAttribute('aria-pressed',b===el)};
 }
 
