@@ -96,7 +96,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radiu
     <div class="tempo"><input id="bpm" type="range" min="110" max="160" step="1" aria-label="Tempo"><span id="bpmv"></span></div>
   </header>
   <div id="bars" hidden role="group" aria-label="How many bars in the sequence"><span>sequence</span></div>
-  <section id="seq" aria-label="Sequence: which voices play in each bar"></section>
+  <section id="seq" hidden aria-label="Sequence: which voices play in each bar"></section>
 
   <main>
     <div id="side" role="group" aria-label="Show or hide voices"></div>
@@ -186,7 +186,7 @@ const SCENES=[
   pat:{kick:b('x.......x.......'),bass:b('x.......x.......'),clap:b('................'),hat:b('..x...x...x...x.'),open:b('................'),acid:a('- - - - 4 - - - - - - 7 - - - -')}}
 ];
 const PICK={1:[12],2:[4,12],4:[0,4,9,12],8:[0,2,4,6,8,10,12,14],16:[...Array(16).keys()]};
-let nBars=4;
+let nBars=1;   // sequencer hidden for now: loop one bar, every voice plays
 const arrange=s=>{s.arr={};for(const v of TABS)s.arr[v]=PICK[nBars].map(i=>ARR[v][i]==='x'?1:0)};
 for(const s of SCENES){s.pat.vox=s.pat.vox||a('0 - - - - - - - 4 - - - - - - -');s.P=defaults();for(const v in s.set)Object.assign(s.P[v],s.set[v]);arrange(s)}
 let scene=SCENES[0],pat=scene.pat,P=scene.P,bpm=scene.bpm,sel='kick';
@@ -626,10 +626,10 @@ function save(){if(resetting)return;try{localStorage.setItem(KEY,JSON.stringify(
 function load(){
   try{
     const d=JSON.parse(localStorage.getItem(KEY));if(!d||d.v!==2)return 0;
-    nBars=d.nBars||4;Object.assign(ON,d.ON);if(DEF[d.sel])sel=d.sel;
+    Object.assign(ON,d.ON);if(DEF[d.sel])sel=d.sel;
     d.scenes.forEach((x,i)=>{const s=SCENES[i];if(!s||!x)return;
       if(x.pat&&x.pat.vox&&x.pat.vox.some(n=>typeof n==='number')){x.pat.vox=x.pat.vox.map(n=>n?{d:4,a:false,s:false}:null);if(x.arr)delete x.arr.vox}
-      for(const v of TABS){if(x.pat&&Array.isArray(x.pat[v])&&x.pat[v].length===16)s.pat[v]=x.pat[v];if(x.P&&x.P[v])Object.assign(s.P[v],x.P[v]);s.arr[v]=x.arr&&x.arr[v]&&x.arr[v].length===nBars?x.arr[v]:PICK[nBars].map(k=>ARR[v][k]==='x'?1:0)}
+      for(const v of TABS){if(x.pat&&Array.isArray(x.pat[v])&&x.pat[v].length===16)s.pat[v]=x.pat[v];if(x.P&&x.P[v])Object.assign(s.P[v],x.P[v]);s.arr[v]=PICK[nBars].map(k=>ARR[v][k]==='x'?1:0)}
       s.bpm=x.bpm||s.bpm;s.swing=x.swing||s.swing});
     for(const el of $('side').children)el.setAttribute('aria-pressed',ON[el.dataset.v]);
     return d.scene||0;
