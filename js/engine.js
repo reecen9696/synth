@@ -43,6 +43,12 @@ TS.impulse = (ac, rt60, pre = 0.01, damp = 0.5) => {
   return buf;
 };
 
+TS.crushCurve = bits => {
+  const c = new Float32Array(4096), q = Math.pow(2, bits - 1);
+  for (let i = 0; i < 4096; i++) { const x = i / 2047.5 - 1; c[i] = Math.round(x * q) / q; }
+  return c;
+};
+
 TS.mtof = m => 440 * Math.pow(2, (m - 69) / 12);
 
 TS.createEngine = function (ac, state) {
@@ -74,13 +80,14 @@ TS.createEngine = function (ac, state) {
   E.hp = F('highpass', 10, 0.9);
   E.lp = F('lowpass', 22000, 0.9);
   E.driveIn = G(1); E.drv = E.shaper(1); E.driveOut = G(1);
+  E.crush = ac.createWaveShaper(); // bit depth reduction: y = round(x·2^(b−1)) / 2^(b−1)
   E.comp = ac.createDynamicsCompressor();
   E.comp.threshold.value = -14; E.comp.ratio.value = 3; E.comp.attack.value = 0.01; E.comp.release.value = 0.15; E.comp.knee.value = 6;
   E.lim = ac.createDynamicsCompressor();
   E.lim.threshold.value = -1.5; E.lim.ratio.value = 20; E.lim.attack.value = 0.001; E.lim.release.value = 0.08; E.lim.knee.value = 0;
   E.out = G(0.8);
   E.analyser = ac.createAnalyser(); E.analyser.fftSize = 2048;
-  E.chain(E.sum, E.hp, E.lp, E.driveIn, E.drv, E.driveOut, E.comp, E.lim, E.out, ac.destination);
+  E.chain(E.sum, E.hp, E.lp, E.driveIn, E.drv, E.crush, E.driveOut, E.comp, E.lim, E.out, ac.destination);
   E.out.connect(E.analyser);
 
   /* ---------- delay: ping-pong with filtered feedback ---------- */
@@ -100,9 +107,10 @@ TS.createEngine = function (ac, state) {
   E.rvSize = 2.2;
 
   /* ---------- rumble: kick -> short reverb -> lowpass -> drive -> lowpass ---------- */
+  /* 48 dB/oct overall: two 24 dB Butterworth stages (Q 0.54, 1.31) either side of the drive. */
   E.rumIn = G(1); E.rumOut = G(0);
-  const rc = ac.createConvolver(); rc.buffer = TS.impulse(ac, 0.9, 0.02, 0.2);
-  E.chain(E.rumIn, rc, F('lowpass', 120, 0.7), E.shaper(5), F('lowpass', 150, 0.7), E.rumOut, E.duck);
+  const rc = ac.createConvolver(); rc.buffer = TS.impulse(ac, 1.6, 0.02, 0.2);
+  E.chain(E.rumIn, rc, F('lowpass', 160, 0.54), F('lowpass', 160, 1.31), E.shaper(5), F('lowpass', 180, 0.54), F('lowpass', 180, 1.31), E.rumOut, E.duck);
 
   /* ---------- channels ---------- */
   for (const id of TS.ORDER) {
@@ -158,6 +166,8 @@ TS.applyState = function (E) {
   E.driveIn.gain.setTargetAtTime(1, now, 0.01);
   E.driveOut.gain.setTargetAtTime(1 / (1 + fx.drive * 0.6), now, 0.01);
   E.out.gain.setTargetAtTime(fx.vol, now, 0.01);
+  const bits = fx.crush > 0 ? Math.round(16 - fx.crush * 13) : 0;
+  if (bits !== E.bits) { E.bits = bits; E.crush.curve = bits ? TS.crushCurve(bits) : null; }
   if (!(E.autoUntil > now)) TS.setFilter(E, fx.filter, now); // song builds/breaks own the filter while they run
 };
 

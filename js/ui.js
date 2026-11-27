@@ -19,7 +19,7 @@ var TS = window.TS = window.TS || {};
 
   /* ---------------- state, undo, persistence ---------------- */
   let S = TS.state = load() || (() => { const s = TS.defaultState(); TS.makeSong(s, 'berlin', 7); return s; })();
-  let sel = 'kick', songSel = 0, clip = null;
+  let sel = 'kick', songSel = 0, clip = null, tool = 'draw';
   const undo = [], redo = [];
   function snap() { undo.push(JSON.stringify(S)); if (undo.length > 80) undo.shift(); redo.length = 0; }
   function restore(json) { const keepMode = S.mode; S = TS.state = JSON.parse(json); S.mode = keepMode; if (TS.E) TS.E.state = S, TS.Seq.s = S; renderAll(); }
@@ -84,6 +84,7 @@ var TS = window.TS = window.TS || {};
     $('bpm').value = S.bpm;
     $('swing').value = S.swing; $('swingv').textContent = S.swing + '%';
     $('key').value = S.key; $('scale').value = S.scale; $('genre').value = S.genre;
+    $('songLen').value = S.songLen || 1; $('fills').checked = !!S.fills;
     $('blurb').textContent = TS.GENRES[S.genre].blurb;
     for (const b of $('mode').children) b.setAttribute('aria-pressed', b.dataset.m === S.mode);
     $('song').hidden = S.mode !== 'song';
@@ -103,6 +104,11 @@ var TS = window.TS = window.TS || {};
     renderAll(); changed(); toast(`New ${TS.GENRES[S.genre].name} track`);
   };
   $('sound').onclick = () => { snap(); TS.applyGenreSound(S, $('genre').value); renderAll(); changed(); toast('Sounds loaded'); };
+  function renderTools() { for (const b of $('tools').children) b.setAttribute('aria-pressed', b.dataset.t === tool); }
+  for (const b of $('tools').children) b.onclick = () => { tool = b.dataset.t; renderTools(); };
+  renderTools();
+  $('songLen').onchange = e => { S.songLen = +e.target.value; changed(false); toast('Applies next time you press Make track'); };
+  $('fills').onchange = e => { S.fills = e.target.checked; changed(false); };
   for (const b of $('mode').children) b.onclick = () => { S.mode = b.dataset.m; renderHeader(); renderSong(); changed(false); };
   $('play').onclick = toggle;
 
@@ -163,7 +169,19 @@ var TS = window.TS = window.TS || {};
     if (!v || !TS.MELODIC.has(id)) return '';
     return TS.noteName(TS.degMidi(S, id, v.d)).replace(/-?\d+$/, '');
   }
-  function updCell(id, i) { const el = cellEls[id][i]; el.className = cellClass(id, i); el.textContent = cellText(id, i); }
+  function updCell(id, i) {
+    const el = cellEls[id][i], x = TS.stepX(S.pats[S.cur], id, i), v = S.pats[S.cur][id][i];
+    el.className = cellClass(id, i) + (v && x && x.p < 1 ? ' chance' : '');
+    el.textContent = cellText(id, i);
+    const b = v && x ? [x.r > 1 ? '×' + x.r : '', x.p < 1 ? Math.round(x.p * 100) + '%' : ''].filter(Boolean).join(' ') : '';
+    if (b) el.dataset.badge = b; else delete el.dataset.badge;
+  }
+  function setX(id, i, x) {
+    const pat = S.pats[S.cur];
+    if (!pat.x) pat.x = {};
+    if (!pat.x[id]) pat.x[id] = Array(16).fill(null);
+    pat.x[id][i] = x && (x.r > 1 || x.p < 1) ? { r: x.r || 1, p: x.p == null ? 1 : x.p } : null;
+  }
   function updRow(id) { for (let i = 0; i < 16; i++) updCell(id, i); }
 
   function renderGrid() {
@@ -199,31 +217,46 @@ var TS = window.TS = window.TS || {};
 
   // pointer painting across cells
   $('grid').addEventListener('contextmenu', e => { if (e.target.classList.contains('cell')) e.preventDefault(); });
+  /* What a click does depends on the tool. The first cell decides the value,
+     dragging paints the same value along the row. */
+  function nextValue(id, i, accentKey) {
+    const pat = S.pats[S.cur], cur = pat[id][i], mel = TS.MELODIC.has(id), x = TS.stepX(pat, id, i) || { r: 1, p: 1 };
+    const t = accentKey && tool === 'draw' ? 'accent' : tool;
+    if (t === 'draw') return { v: cur ? (mel ? null : 0) : (mel ? { d: lastDeg[id] || 0, a: false, s: false } : 1), x: null };
+    if (t === 'accent') {
+      if (mel) return { v: cur ? { ...cur, a: !cur.a } : { d: lastDeg[id] || 0, a: true, s: false }, x };
+      return { v: cur === 2 ? 1 : 2, x };
+    }
+    if (!cur) return null; // ratchet and chance only apply to steps that are on
+    if (t === 'ratchet') return { v: cur, x: { ...x, r: x.r >= 4 ? 1 : (x.r || 1) + 1 } };
+    if (t === 'chance') { const seq = [1, 0.75, 0.5, 0.25]; return { v: cur, x: { ...x, p: seq[(seq.indexOf(x.p == null ? 1 : x.p) + 1) % 4] } }; }
+  }
+  function applyValue(id, i, nv) {
+    const pat = S.pats[S.cur];
+    if (tool !== 'draw' && tool !== 'accent' && !pat[id][i]) return;
+    pat[id][i] = nv.v && typeof nv.v === 'object' ? { ...nv.v } : nv.v;
+    setX(id, i, pat[id][i] ? nv.x : null);
+    updCell(id, i);
+  }
   $('grid').addEventListener('pointerdown', e => {
     const c = e.target.closest('.cell'); if (!c) return;
-    const id = c.closest('.row').dataset.id, i = +c.dataset.i, pat = S.pats[S.cur], cur = pat[id][i];
-    const accent = e.shiftKey || e.altKey || e.button === 2;
-    snap();
-    let val;
-    if (TS.MELODIC.has(id)) {
-      if (accent) { if (!cur) val = { d: lastDeg[id] || 0, a: true, s: false }; else val = { ...cur, a: !cur.a }; }
-      else val = cur ? null : { d: lastDeg[id] || 0, a: false, s: false };
-    } else {
-      if (accent) val = cur === 2 ? 1 : 2; else val = cur ? 0 : 1;
-    }
-    paint = { id, val, accent };
-    pat[id][i] = val && typeof val === 'object' ? { ...val } : val; updCell(id, i);
-    if (val) audition(id, val);
-    if (sel !== id) select(id); else renderRoll();
-    c.releasePointerCapture && c.releasePointerCapture(e.pointerId);
+    const id = c.closest('.row').dataset.id, i = +c.dataset.i;
+    const nv = nextValue(id, i, e.shiftKey || e.altKey || e.button === 2);
     e.preventDefault();
+    if (sel !== id) select(id);
+    if (!nv) return toast('Turn the step on first (Draw)');
+    snap();
+    paint = { id, nv };
+    applyValue(id, i, nv);
+    if (nv.v) audition(id, nv.v);
+    renderRoll();
+    c.releasePointerCapture && c.releasePointerCapture(e.pointerId);
   });
   $('grid').addEventListener('pointerover', e => {
     if (!paint) return; const c = e.target.closest('.cell'); if (!c) return;
     const row = c.closest('.row'); if (!row || row.dataset.id !== paint.id) return;
-    const i = +c.dataset.i, id = paint.id;
-    S.pats[S.cur][id][i] = paint.val && typeof paint.val === 'object' ? { ...paint.val } : paint.val; updCell(id, i);
-    if (sel === id) renderRoll();
+    applyValue(paint.id, +c.dataset.i, paint.nv);
+    if (sel === paint.id) renderRoll();
   });
   addEventListener('pointerup', () => { if (paint) { paint = null; renderPats(); changed(false); } });
 
@@ -273,14 +306,14 @@ var TS = window.TS = window.TS || {};
 
     const tools = [
       h('button', { 'data-help': 'Make a new part for this instrument in the current style (R).', onclick: () => reroll(id) }, 'Re-roll'),
-      h('button', { 'data-help': 'Remove every step for this instrument in this pattern.', onclick: () => { snap(); S.pats[S.cur][id] = TS.emptyPattern()[id]; updRow(id); renderRoll(); renderPats(); changed(false); } }, 'Clear'),
+      h('button', { 'data-help': 'Remove every step for this instrument in this pattern.', onclick: () => { snap(); S.pats[S.cur][id] = TS.emptyPattern()[id]; if (S.pats[S.cur].x) delete S.pats[S.cur].x[id]; updRow(id); renderRoll(); renderPats(); changed(false); } }, 'Clear'),
       h('button', { 'data-help': 'Shift every step one to the left.', onclick: () => shift(id, 1) }, '◀ shift'),
       h('button', { 'data-help': 'Shift every step one to the right.', onclick: () => shift(id, -1) }, 'shift ▶')
     ];
     if (!melodic) {
       const k = h('input', { type: 'range', min: 0, max: 16, step: 1, value: 4 }), r = h('input', { type: 'range', min: 0, max: 15, step: 1, value: 0 });
       const lab = h('span', {}, 'E(4,16)');
-      const apply = () => { const n = tr.len, hits = Math.min(+k.value, n), e = TS.euclid(hits, n, +r.value); lab.textContent = `E(${hits},${n}) rot ${r.value}`; S.pats[S.cur][id] = Array.from({ length: 16 }, (_, i) => i < n ? e[i] : 0); updRow(id); renderPats(); changed(false); };
+      const apply = () => { const n = tr.len, hits = Math.min(+k.value, n), e = TS.euclid(hits, n, +r.value); lab.textContent = `E(${hits},${n}) rot ${r.value}`; S.pats[S.cur][id] = Array.from({ length: 16 }, (_, i) => i < n ? e[i] : 0); if (S.pats[S.cur].x) delete S.pats[S.cur].x[id]; updRow(id); renderPats(); changed(false); };
       k.addEventListener('pointerdown', snap); r.addEventListener('pointerdown', snap);
       k.oninput = apply; r.oninput = apply;
       tools.push(h('label', { 'data-help': 'Euclidean rhythm: spread this many hits as evenly as possible over the loop, then rotate. E(3,8) is the tresillo, E(5,16) a bossa feel.' }, 'euclid hits', k, 'rotate', r, lab));
@@ -340,11 +373,12 @@ var TS = window.TS = window.TS || {};
     snap();
     const g = TS.GENRES[S.genre], L = TS.scale(S).length;
     if (TS.MELODIC.has(id)) {
-      const style = g.lines[id] || { bass: 'rolling', acid: 'acid', stab: 'dub', pad: 'hold', pluck: 'bleep' }[id];
+      const style = g.lines[id] || { bass: 'rolling', acid: 'acid', stab: 'dub', pad: 'hold', pluck: 'bleep', hoover: 'hoover' }[id];
       S.pats[S.cur][id] = TS.LINES[style](Math.random, L);
     } else {
       const fallback = { kick: 'x...', snare: '....x.......x...', clap: '....x.......x...', rim: '..3..4....3..5..', chat: 'x5x5', ohat: '..x.', ride: '..x.', tom: '3..3..3...3..3..', cow: '...3......3.....', shaker: 'x4x4' }[id];
       S.pats[S.cur][id] = TS.drum(g.drums[id] || fallback);
+      if (S.pats[S.cur].x) delete S.pats[S.cur].x[id];
     }
     updRow(id); renderRoll(); renderPats(); changed(false);
   }
@@ -352,12 +386,15 @@ var TS = window.TS = window.TS || {};
     snap(); const a = S.pats[S.cur][id], n = S.tracks[id].len, part = a.slice(0, n);
     const out = part.map((_, i) => part[(i + dir + n) % n]);
     for (let i = 0; i < n; i++) a[i] = out[i];
+    const xs = S.pats[S.cur].x && S.pats[S.cur].x[id];
+    if (xs) { const xp = xs.slice(0, n); for (let i = 0; i < n; i++) xs[i] = xp[(i + dir + n) % n]; }
     updRow(id); renderRoll(); changed(false);
   }
 
   /* ---------------- master ---------------- */
   const MDEF = [
     ['drive', 'drive', 0, 1, 0.2, '', 'Soft clipping on the whole mix. Warmth at low settings, crunch at high.'],
+    ['crush', 'bit crush', 0, 1, 0, '', 'Reduces bit depth from 16 down to 3 bits: digital grit for industrial. 0 is off.'],
     ['duck', 'sidechain depth', 0, 1, 0.6, '', 'How hard the kick pushes everything else down.'],
     ['duckRel', 'sidechain release', 0.03, 0.5, 0.18, 's', 'How fast things come back after the kick. Match it to the tempo for a smooth pump.'],
     ['dtime', 'delay time', 1, 8, 3, '', 'Echo time in 16th notes.', ['1/16', '1/8', 'dotted 1/8', '1/4', '5/16', 'dotted 1/4', '7/16', '1/2']],
@@ -403,6 +440,9 @@ var TS = window.TS = window.TS || {};
       if (q.pat !== lastPat) { lastPat = q.pat; for (const b of $('pats').children) b.classList.toggle('playing', +b.dataset.i === q.pat); }
       if (q.abs !== lastPh) {
         lastPh = q.abs;
+        const beat = Math.floor((q.abs % 16) / 4) + 1;
+        if (S.mode === 'song') { const en = S.chain[q.entry]; $('pos').innerHTML = en ? `${LETTERS[en.p]} ${S.pats[en.p].name || ''} · bar <b>${q.rep + 1}</b> / ${en.r} · beat <b>${beat}</b>` : ''; }
+        else $('pos').innerHTML = `bar <b>${q.rep + 1}</b> · phrase bar <b>${(q.rep % 8) + 1}</b> / 8 · beat <b>${beat}</b>`;
         for (const id of TS.ORDER) {
           const len = S.tracks[id].len, i = q.abs % len, cells = cellEls[id];
           if (!cells) continue;
@@ -412,7 +452,7 @@ var TS = window.TS = window.TS || {};
         if (roll) { const i = q.abs % S.tracks[sel].len; for (const c of roll.querySelectorAll('.rc')) c.classList.toggle('ph', +c.dataset.i === i); }
       }
     } else if (lastPh !== -1) {
-      lastPh = -1; lastPat = -1; lastEntry = -1;
+      lastPh = -1; lastPat = -1; lastEntry = -1; $('pos').textContent = 'stopped';
       for (const el of $('grid').querySelectorAll('.ph')) el.classList.remove('ph');
       for (const b of $('pats').children) b.classList.remove('playing');
       for (const c of $('song').querySelectorAll('.chip')) c.classList.remove('now');

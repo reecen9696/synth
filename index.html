@@ -38,6 +38,12 @@
   </label>
   <button id="make" class="primary" data-help="Generate a full track in this style: sounds, tempo, key, 8 patterns and a song order. Press again for a different one.">Make track</button>
   <button id="sound" data-help="Load only the style's sounds, tempo and key. Your patterns stay.">Use sounds only</button>
+  <label class="field" data-help="Song length for Make track. Club length doubles every section (about 5 to 7 minutes), the way DJs need it for mixing.">
+    <span>Length</span><select id="songLen"><option value="1">Short · 2–3 min</option><option value="2">Club · 5–7 min</option></select>
+  </label>
+  <label class="field" data-help="In song mode, play a snare fill on the last bar of every 8 bar phrase.">
+    <input id="fills" type="checkbox"><span>Auto fills</span>
+  </label>
   <p id="blurb" class="blurb"></p>
 </section>
 
@@ -55,6 +61,18 @@
 </section>
 
 <section id="song" class="song" data-help="Song order. Each block is a pattern repeated for some bars. Click a block to edit it."></section>
+
+<section class="toolbar">
+  <span class="tlabel">Click does</span>
+  <div class="seg" id="tools">
+    <button data-t="draw" data-help="Draw: click a step to turn it on or off. Drag to paint a row.">Draw</button>
+    <button data-t="accent" data-help="Accent: click steps to make them louder and brighter (also Shift+click in Draw).">Accent</button>
+    <button data-t="ratchet" data-help="Ratchet: click an active step to split it into 2, 3 or 4 fast hits. Rolls and stutters.">Ratchet</button>
+    <button data-t="chance" data-help="Chance: click an active step to make it play only some of the time: 75%, 50%, 25%.">Chance</button>
+  </div>
+  <span class="sp"></span>
+  <span id="pos" class="pos" data-help="Where the playhead is. Techno thinks in 8 and 16 bar phrases: change something every 8 bars."></span>
+</section>
 
 <main id="grid" class="grid" aria-label="Step sequencer"></main>
 
@@ -82,6 +100,7 @@
       <li>Press <b>Play</b> (or Space). <b>Loop pattern</b> repeats one bar, <b>Play song</b> runs the whole order.</li>
       <li>The grid is one bar of 16 steps. Each row is an instrument. <b>Click</b> a step to turn it on, <b>drag</b> to paint, <b>Shift+click</b> for an accent (louder).</li>
       <li>Click an instrument's <b>name</b> to open its sounds below. For melodic parts you get a note grid: click a row to pick the note, then mark accents and slides.</li>
+      <li><b>Click does</b> above the grid switches what a click means: draw, accent, ratchet (2–4 fast hits in one step) or chance (the step only plays sometimes).</li>
       <li><b>M</b> mutes, <b>S</b> solos. The steps number sets the loop length per track; odd lengths against 16 make polymeters.</li>
       <li>The <b>Master</b> filter is for live sweeps. <b>Export WAV</b> renders audio.</li>
     </ol>

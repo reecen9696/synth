@@ -7,7 +7,12 @@ var TS = window.TS = window.TS || {};
    50% is straight, 66% is a triplet feel, 75% is a dotted feel. */
 TS.swingOffset = (s, abs, sd) => abs % 2 ? (s.swing / 100 - 0.5) * 2 * sd : 0;
 
-TS.playStep = (E, s, pat, abs, t, sd, R = Math.random) => {
+/* Per-step extras live in pat.x[track][step] = { r: ratchet 1..4, p: chance 0..1 }.
+   A ratchet splits the step into r equal hits (rolls); chance is the
+   probability the step plays at all (Elektron-style trig probability). */
+TS.stepX = (pat, id, i) => pat.x && pat.x[id] ? pat.x[id][i] : null;
+
+TS.playStep = (E, s, pat, abs, t, sd, R = Math.random, fill = false) => {
   const anySolo = TS.ORDER.some(id => s.tracks[id].solo);
   const tt = t + TS.swingOffset(s, abs, sd);
   for (const id of TS.ORDER) {
@@ -16,14 +21,35 @@ TS.playStep = (E, s, pat, abs, t, sd, R = Math.random) => {
     const len = tr.len || 16, steps = pat[id], i = abs % len, val = steps[i];
     if (!val) continue;
     if (tr.mix.chance < 1 && R() > tr.mix.chance) continue;
+    const x = TS.stepX(pat, id, i);
+    if (x && x.p != null && x.p < 1 && R() > x.p) continue;
+    const r = x && x.r > 1 ? x.r : 1, sub = sd / r;
     let ev;
     if (TS.MELODIC.has(id)) {
       const prev = steps[(i - 1 + len) % len], next = steps[(i + 1) % len];
       ev = { d: val.d, a: val.a, s: val.s, prev, next, midi: TS.degMidi(s, id, val.d), prevMidi: prev ? TS.degMidi(s, id, prev.d) : null };
     } else ev = { v: val };
-    try { TS.VOICES[id].play(E, tt, ev, tr.p, E.ch[id].in, sd); } catch (err) { console.error(id, err); }
+    for (let k = 0; k < r; k++) {
+      const e = k ? Object.assign({}, ev, { v: 1, a: false, prev: k ? { ...ev, s: false } : ev.prev, s: k < r - 1 ? false : ev.s }) : ev;
+      try { TS.VOICES[id].play(E, tt + k * sub, e, tr.p, E.ch[id].in, sub); } catch (err) { console.error(id, err); }
+    }
   }
+  if (fill) TS.fill(E, s, abs, tt, sd);
 };
+
+/* Drum fill on the last beat of a phrase: a snare roll that doubles speed
+   (16ths, then 32nds) with rising velocity, plus an open hat on the last step. */
+TS.fill = (E, s, abs, t, sd) => {
+  const i = abs % 16; if (i < 12) return;
+  const sn = s.tracks.snare, oh = s.tracks.ohat;
+  const r = i < 14 ? 1 : 2;
+  if (!sn.mute) for (let k = 0; k < r; k++) TS.VOICES.snare.play(E, t + k * sd / r, { v: i >= 14 ? 2 : 1 }, sn.p, E.ch.snare.in, sd / r);
+  if (i === 15 && !oh.mute) TS.VOICES.ohat.play(E, t + sd * 0.5, { v: 2 }, oh.p, E.ch.ohat.in, sd);
+};
+
+/* Which bars get a fill: the last bar of every 8 bar phrase, and the last bar
+   of a section that is at least 4 bars long. */
+TS.isFillBar = (s, en, rep) => !!s.fills && en.r >= 4 && en.fx !== 'break' && (rep % 8 === 7 || rep === en.r - 1);
 
 /* Section effects over a whole chain entry (dur seconds starting at t).
    build: highpass sweeps up exponentially and a noise riser plays.
@@ -47,10 +73,17 @@ TS.entryFx = (E, s, fx, t, dur, bar) => {
   }
 };
 
-/* ---------------- live playback ---------------- */
+/* ---------------- live playback ----------------
+   Look-ahead scheduling (Chris Wilson, "A tale of two clocks"): a timer wakes
+   every 25 ms and books every step due in the next 120 ms on the audio clock.
+   The timer runs in a Worker because background tabs throttle setTimeout. */
 TS.Seq = {
   playing: false, abs: 0, nextT: 0, queue: [], timer: null,
-  pat: 0, entry: 0, rep: -1, startEntry: 0,
+  pat: 0, entry: 0, rep: -1, startEntry: 0, fillBar: false,
+  worker: (() => {
+    try { return new Worker(URL.createObjectURL(new Blob(['let id;onmessage=e=>{clearInterval(id);if(e.data==="go")id=setInterval(()=>postMessage(0),25)}'], { type: 'text/javascript' }))); }
+    catch (e) { return null; }
+  })(),
 
   start(E, s) {
     this.E = E; this.s = s;
@@ -58,15 +91,18 @@ TS.Seq = {
     this.pat = s.cur; this.entry = this.startEntry = Math.min(this.startEntry, s.chain.length - 1);
     this.nextT = E.ac.currentTime + 0.08;
     this.playing = true;
+    if (this.worker) { this.worker.onmessage = () => this.tick(); this.worker.postMessage('go'); }
     this.tick();
   },
   stop() {
-    clearTimeout(this.timer); this.playing = false; this.queue = [];
+    clearTimeout(this.timer); if (this.worker) this.worker.postMessage('stop');
+    this.playing = false; this.queue = [];
     const E = this.E; if (!E) return;
     for (const id of TS.ORDER) if (TS.VOICES[id].stop) TS.VOICES[id].stop(E);
-    E.autoUntil = 0; TS.setFilter(E, this.s.fx.filter, E.ac.currentTime);
-    E.hp.frequency.cancelScheduledValues(E.ac.currentTime); E.lp.frequency.cancelScheduledValues(E.ac.currentTime);
-    TS.setFilter(E, this.s.fx.filter, E.ac.currentTime);
+    const now = E.ac.currentTime;
+    E.autoUntil = 0;
+    E.hp.frequency.cancelScheduledValues(now); E.lp.frequency.cancelScheduledValues(now);
+    TS.setFilter(E, this.s.fx.filter, now);
   },
   bar(t, sd) {
     const s = this.s;
@@ -75,20 +111,23 @@ TS.Seq = {
       else if (++this.rep >= s.chain[this.entry].r) { this.entry = (this.entry + 1) % s.chain.length; this.rep = 0; }
       const en = s.chain[this.entry];
       this.pat = en.p;
+      this.fillBar = TS.isFillBar(s, en, this.rep);
       if (this.rep === 0) TS.entryFx(this.E, s, en.fx, t, en.r * 16 * sd, 16 * sd);
     } else {
-      this.pat = s.cur; this.rep = 0;
+      this.pat = s.cur; this.rep = this.rep < 0 ? 0 : this.rep + 1; this.fillBar = false;
     }
   },
   tick() {
+    if (!this.playing) return;
     const E = this.E, s = this.s, sd = 60 / s.bpm / 4;
+    if (this.nextT < E.ac.currentTime - 0.3) this.nextT = E.ac.currentTime + 0.02; // woke up late: skip ahead, don't burst
     while (this.nextT < E.ac.currentTime + 0.12) {
       if (this.abs % 16 === 0) this.bar(this.nextT, sd);
-      TS.playStep(E, s, s.pats[this.pat], this.abs, this.nextT, sd);
+      TS.playStep(E, s, s.pats[this.pat], this.abs, this.nextT, sd, Math.random, this.fillBar);
       this.queue.push({ abs: this.abs, t: this.nextT, pat: this.pat, entry: this.entry, rep: this.rep });
       this.nextT += sd; this.abs++;
     }
-    this.timer = setTimeout(() => this.tick(), 25);
+    if (!this.worker) this.timer = setTimeout(() => this.tick(), 25);
   },
   /* What is sounding right now (for the playhead). */
   now() {
@@ -100,19 +139,39 @@ TS.Seq = {
 };
 
 /* ---------------- offline render to WAV ---------------- */
+/* Nodes are created just in time, a second ahead, by suspending the offline
+   context every second. Creating the whole song's nodes up front makes the
+   renderer process thousands of idle filters on every block (slower than
+   real time); this keeps it at a few seconds per minute of audio. */
 TS.render = async (s, what, bars = 4) => {
+  await TS.metalReady;
   const sd = 60 / s.bpm / 4, sr = 44100;
   const entries = what === 'song' ? s.chain.map(e => ({ ...e })) : [{ p: s.cur, r: bars, fx: '' }];
   const total = entries.reduce((a, e) => a + e.r, 0) * 16 * sd + 3;
   const oac = new OfflineAudioContext(2, Math.ceil(sr * total), sr);
   const E = TS.createEngine(oac, s);
-  let abs = 0, t = 0.02;
   const R = TS.rng(s.seed || 1);
+  // flat list of steps with their times
+  const ev = []; let abs = 0, t = 0.02;
   for (const en of entries) {
-    TS.entryFx(E, s, en.fx, t, en.r * 16 * sd, 16 * sd);
-    for (let r = 0; r < en.r; r++) for (let k = 0; k < 16; k++) { TS.playStep(E, s, s.pats[en.p], abs, t, sd, R); abs++; t += sd; }
+    ev.push({ t, fx: en });
+    for (let r = 0; r < en.r; r++) {
+      const fill = what === 'song' && TS.isFillBar(s, en, r);
+      for (let k = 0; k < 16; k++) { ev.push({ t, p: en.p, abs, fill }); abs++; t += sd; }
+    }
   }
-  if (E.acid) E.acid.vca.gain.setTargetAtTime(0, t, 0.01);
+  const end = t;
+  let i = 0;
+  const until = limit => {
+    for (; i < ev.length && ev[i].t < limit; i++) {
+      const e = ev[i];
+      if (e.fx) TS.entryFx(E, s, e.fx.fx, e.t, e.fx.r * 16 * sd, 16 * sd);
+      else TS.playStep(E, s, s.pats[e.p], e.abs, e.t, sd, R, e.fill);
+    }
+    if (i >= ev.length && E.acid && !E.acidOff) { E.acidOff = true; E.acid.vca.gain.setTargetAtTime(0, end, 0.01); }
+  };
+  until(1.5);
+  for (let k = 1; k < total - 0.5; k++) oac.suspend(k).then(() => { until(k + 1.5); oac.resume(); });
   return TS.wav(await oac.startRendering());
 };
 

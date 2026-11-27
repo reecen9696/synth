@@ -88,7 +88,7 @@ TS.LINES = {
     return out;
   },
   // dub techno chord stabs: two or three off-beat hits, same chord
-  dub: (R) => { const v = pick(R, ['..x...x.....x...', '...x..x...x.....', '..x.....x.x.....', '......x.......x.', '..x..x....x..x..']); return [...v].map(c => c === 'x' ? N(0, R() < 0.3) : null); },
+  dub: (R) => { const v = pick(R, ['...x.....x....x.', '..x...x.....x...', '...x..x...x.....', '..x.....x.x.....', '......x.......x.', '..x..x....x..x..']); return [...v].map(c => c === 'x' ? N(0, R() < 0.3) : null); },
   // Detroit: 3-3-2 syncopation with chord changes
   detroit: (R, L) => { const p = 'x..x..x...x..x..', ch = [0, pick(R, [3, 5, 4]), pick(R, [5, 4, 2])]; let k = 0; return [...p].map((c, i) => c === 'x' ? N(ch[(k++ >> 1) % 3], i === 0) : null); },
   // one stab per bar on a different spot
@@ -101,6 +101,8 @@ TS.LINES = {
   ostinato: (R, L) => { const cell = [N(0, true), null, N(pick(R, [2, 4, L])), N(0), null, N(pick(R, [1, 3, 4])), null]; return Array.from({ length: 16 }, (_, i) => cell[i % cell.length] && { ...cell[i % cell.length] }); },
   // minimal bleeps: rare, random, high
   bleep: (R, L) => Array.from({ length: 16 }, (_, i) => R() < 0.18 ? N(pick(R, [0, 2, 4, L, L + 2]), R() < 0.3) : null),
+  // hoover: long swooping notes on the one and the off-beats
+  hoover: (R, L) => { const p = pick(R, ['x.......x.....x.', 'x.....x.....x...', 'x...........x...']); const ch = [0, pick(R, [3, 4, 5 % L]), 0]; let k = 0; return [...p].map(c => c === 'x' ? N(ch[k++ % 3], k === 1) : null); },
   // rave stab riff
   rave: (R, L) => { const p = pick(R, ['x..x..x.x..x..x.', 'x.x..x.x..x.x...', 'x..x...x..x..x..']); const ch = [0, pick(R, [5, 3]), pick(R, [4, 6])]; let k = 0; return [...p].map(c => c === 'x' ? N(ch[Math.floor(k++ / 3) % 3], k % 3 === 1) : null); }
 };
