@@ -96,7 +96,7 @@ select option{font-style:normal;color:#111;background:#fff}
 #t-name{font-style:italic;opacity:.7;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #tw{position:static;width:100%;height:56px;cursor:ew-resize;touch-action:none}
 #t-info{font-size:13px;opacity:.65;font-variant-numeric:tabular-nums;min-height:1.2em}
-#track.empty #tw,#track.empty #t-info,#track.empty .k,#track.empty #t-match,#track.empty #t-clear{display:none}
+#track.empty #tw,#track.empty #t-info,#track.empty .k,#track.empty #t-match,#track.empty #t-listen,#track.empty #t-clear{display:none}
 #knobs{padding-left:92px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 26px}
 .k label{display:flex;justify-content:space-between;font-style:italic;font-size:15px}
 .k output{font-style:normal;font-variant-numeric:tabular-nums;opacity:.7}
@@ -143,6 +143,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radiu
       <span id="t-name">none</span>
       <div class="k"><label for="t-filter">filter<output id="t-filterv"></output></label><input id="t-filter" type="range" min="-1" max="1" step=".01"></div>
       <div class="k"><label for="t-level">level<output id="t-levelv"></output></label><input id="t-level" type="range" min="0" max="1" step=".01"></div>
+      <button id="t-listen" title="hear the cropped track on its own, without the song">listen</button>
       <button id="t-match" aria-pressed="true" title="change the track's speed so it lines up with the bars">match beat</button>
       <button id="t-load">load…</button>
       <button id="t-clear" title="remove the track">remove</button>
@@ -280,8 +281,10 @@ function initAudio(){
   N.f1=F('lowpass',400,11);N.f2=F('lowpass',400,.7);N.vca=G(0);N.aLv=G(.5);N.acc=0;
   chain(N.ao,G(.6),N.f1,N.f2,F('highpass',40,.7),as,N.vca,N.aLv,N.duck);const ad=G(.35);N.aLv.connect(ad);ad.connect(N.dSend);
   N.ao.start();
-  // background track: lowpass and highpass (one filter knob), level, ducked by the kick like everything else
-  N.tLp=F('lowpass',20000,.7);N.tHp=F('highpass',20,.7);N.tLv=G(.6);chain(N.tLp,N.tHp,N.tLv,N.duck);
+  // background track: lowpass and highpass (one filter knob), then level. Not ducked by the kick, so speech stays clear
+  N.tLp=F('lowpass',20000,.7);N.tHp=F('highpass',20,.7);N.tLv=G(.6);
+  const tc=ac.createDynamicsCompressor();tc.threshold.value=-34;tc.ratio.value=10;tc.knee.value=8;tc.attack.value=.004;tc.release.value=.15;   // squashes the track so quiet words come up
+  N.tPre=G(1);chain(N.tLp,N.tHp,N.tPre,tc,N.tLv,N.master);
   // chorus for hoover and supersaw: two short delays, wobbling slowly, left and right
   N.cho=G(1);
   for(const [d,r,pan] of [[.012,.6,-.8],[.019,.83,.8]]){
@@ -446,14 +449,23 @@ function trackFire(t){
   if(TR.bar++%n)return;
   if(TR.src)try{TR.src.stop(t)}catch(e){}
   const s=ac.createBufferSource();s.buffer=TR.buf;s.playbackRate.value=rate;s.connect(N.tLp);s.start(t,TR.a,TR.b-TR.a);
-  TR.src=s;TR.t0=t;TR.rate=rate;
+  TR.src=s;TR.t0=t;TR.rate=rate;TR.p0=TR.a;TR.solo=false;listenUI();
 }
-function trackStop(){if(TR.src)try{TR.src.stop()}catch(e){}TR.src=null}
+// listen: play the crop on its own (from, for how long), before or without the song
+function trackListen(from,len){
+  if(!TR.buf)return;initAudio();ac.resume();trackStop();
+  const s=ac.createBufferSource(),t=ac.currentTime+.02,rate=trackPlan().rate;s.buffer=TR.buf;s.playbackRate.value=rate;s.connect(N.tLp);
+  s.start(t,from,len);s.onended=()=>{if(TR.src===s){TR.src=null;TR.solo=false;listenUI()}};
+  TR.src=s;TR.t0=t;TR.rate=rate;TR.p0=from;TR.solo=true;listenUI();
+}
+function listenUI(){const el=document.getElementById('t-listen');if(el){el.textContent=TR.solo?'stop':'listen';el.setAttribute('aria-pressed',!!TR.solo)}}
+function trackStop(){const s=TR.src;TR.src=null;TR.solo=false;if(s)try{s.stop()}catch(e){}listenUI()}
 function trackParams(){
   if(!ac)return;const x=TR.filter,now=ac.currentTime;
   N.tLp.frequency.setTargetAtTime(x<0?20000*Math.pow(.01,-x):20000,now,.02);
   N.tHp.frequency.setTargetAtTime(x>0?20*Math.pow(200,x):20,now,.02);
-  N.tLv.gain.setTargetAtTime(TR.level,now,.02);
+  N.tPre.gain.value=TR.norm||1;                                  // norm lifts a quiet file to full scale
+  N.tLv.gain.setTargetAtTime(TR.level*5,now,.02);
 }
 /* tempo of a clip: loudness jumps every ~12 ms, then find the gap between jumps that repeats most (70–180 bpm).
    Returns 0 when nothing repeats clearly, e.g. speech. */
@@ -821,7 +833,7 @@ function trackDraw(){
   for(let i=0;i<np;i++){const x=i/np*w,y=Math.max(.5,P2[i]*h*.48);tx.globalAlpha=x>=xa&&x<=xb?(TR.on?.9:.4):.2;tx.beginPath();tx.moveTo(x,h/2-y);tx.lineTo(x,h/2+y);tx.stroke()}
   tx.globalAlpha=1;tx.lineWidth=2;for(const x of [xa,xb]){tx.beginPath();tx.moveTo(x,0);tx.lineTo(x,h);tx.stroke()}
   tx.beginPath();tx.moveTo(xa,0);tx.lineTo(xa+7,0);tx.lineTo(xa,9);tx.fill();tx.beginPath();tx.moveTo(xb,0);tx.lineTo(xb-7,0);tx.lineTo(xb,9);tx.fill();
-  if(playing&&TR.src&&ac){const p=TR.a+(ac.currentTime-TR.t0)*TR.rate;if(p>=TR.a&&p<=TR.b){tx.fillStyle=scene.dot;tx.beginPath();tx.arc(p/dur*w,h/2,5,0,7);tx.fill();tx.stroke()}}
+  if(TR.src&&ac){const p=TR.p0+(ac.currentTime-TR.t0)*TR.rate;if(p>=TR.a&&p<=TR.b){tx.fillStyle=scene.dot;tx.beginPath();tx.arc(p/dur*w,h/2,5,0,7);tx.fill();tx.stroke()}}
 }
 (function loop(){requestAnimationFrame(loop);trackDraw()})();
 async function trackLoad(data,name,keep){
@@ -830,6 +842,7 @@ async function trackLoad(data,name,keep){
     const d=buf.getChannelData(0),np=900,pk=new Float32Array(np),sz=Math.floor(d.length/np);let mx=0;
     for(let i=0;i<np;i++){let m=0;for(let j=0;j<sz;j+=8){const v=Math.abs(d[i*sz+j]);if(v>m)m=v}pk[i]=m;if(m>mx)mx=m}
     for(let i=0;i<np;i++)pk[i]/=mx||1;
+    TR.norm=Math.min(8,1/(mx||1));
     trackStop();Object.assign(TR,{buf,name,peaks:pk,a:0,b:buf.duration,bar:0});
     let st=null;try{st=JSON.parse(localStorage.getItem(TKEY))}catch(e){}
     if(st&&st.name===name){Object.assign(TR,{a:Math.min(st.a,buf.duration),b:Math.min(st.b,buf.duration),filter:st.filter,level:st.level,match:st.match,on:st.on})}
@@ -844,6 +857,7 @@ $('t-load').onclick=()=>$('t-file').click();
 $('t-file').onchange=async e=>{const f=e.target.files[0];if(f)trackLoad(await f.arrayBuffer(),f.name.replace(/\.[^.]+$/,''),true);e.target.value=''};
 $('t-clear').onclick=()=>{trackStop();TR.buf=null;idb('del');localStorage.setItem(TKEY,JSON.stringify({removed:1}));trackUI()};
 $('t-on').onclick=()=>{TR.on=!TR.on;if(!TR.on)trackStop();else TR.bar=0;trackUI();trackSave()};
+$('t-listen').onclick=()=>{if(TR.solo)trackStop();else trackListen(TR.a,TR.b-TR.a)};
 $('t-match').onclick=()=>{TR.match=!TR.match;TR.bar=0;trackUI();trackSave()};
 $('t-filter').oninput=e=>{TR.filter=+e.target.value;trackParams();trackUI();trackSave()};
 $('t-level').oninput=e=>{TR.level=+e.target.value;trackParams();trackUI();trackSave()};
@@ -852,7 +866,8 @@ addEventListener('drop',async e=>{e.preventDefault();const f=e.dataTransfer.file
 {let h=null;const at=e=>{const r=tw.getBoundingClientRect();return Math.max(0,Math.min(1,(e.clientX-r.left)/r.width))*TR.buf.duration};
   tw.addEventListener('pointerdown',e=>{if(!TR.buf)return;const t=at(e);h=Math.abs(t-TR.a)<Math.abs(t-TR.b)?'a':'b';tw.setPointerCapture(e.pointerId);tw.dispatchEvent(new PointerEvent('pointermove',e))});
   tw.addEventListener('pointermove',e=>{if(!h)return;const t=at(e);if(h==='a')TR.a=Math.min(t,TR.b-.1);else TR.b=Math.max(t,TR.a+.1);trackUI()});
-  tw.addEventListener('pointerup',()=>{if(!h)return;h=null;TR.bpm=detectBpm(TR.buf,TR.a,TR.b);TR.bar=0;trackUI();trackSave()})}
+  tw.addEventListener('pointerup',()=>{if(!h)return;const w=h;h=null;TR.bpm=detectBpm(TR.buf,TR.a,TR.b);TR.bar=0;trackUI();trackSave();
+    if(!playing){if(w==='a')trackListen(TR.a,Math.min(3,TR.b-TR.a));else{const f=Math.max(TR.a,TR.b-2);trackListen(f,TR.b-f)}}})}
 // start-up: the file you chose last time, else tracks/default.mp3 if the folder has one
 (async()=>{trackUI();let st=null;try{st=JSON.parse(localStorage.getItem(TKEY))}catch(e){}
   const k=await idb('get');if(k&&k.data)return trackLoad(k.data,k.name);
