@@ -47,7 +47,10 @@ canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;touch-a
 .tg[aria-pressed="true"] .sw{background:var(--ink)}
 .tg[aria-pressed="true"] .sw i{transform:translateX(13px);background:var(--bg)}
 /* sequencer: 16 bars, columns line up with the 16 steps of the graph below */
-#seq{display:grid;grid-template-columns:126px repeat(16,minmax(0,1fr));padding-right:30px;row-gap:1px;user-select:none}
+#seq{display:grid;grid-template-columns:126px repeat(var(--n),minmax(0,56px));row-gap:1px;user-select:none}
+#seq[hidden]{display:none}
+#bars{display:flex;align-items:center;gap:2px 10px;font-variant-numeric:tabular-nums}
+#bars span{font-style:italic;opacity:.6;margin-right:2px}
 #seq .lab{font-style:italic;text-align:right;padding-right:22px;font-size:13px;line-height:15px;opacity:.75}
 #seq .lab.off{opacity:.3}
 #seq .num{font-size:12px;opacity:.45;text-align:left;font-variant-numeric:tabular-nums;cursor:pointer;padding:0 0 4px 2px}
@@ -81,6 +84,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radiu
   <header>
     <div id="scenes" role="group" aria-label="Scene"></div>
     <span class="sp"></span>
+    <div id="bars" role="group" aria-label="How many bars in the sequence"><span>bars</span></div>
     <div class="tempo"><input id="bpm" type="range" min="110" max="160" step="1" aria-label="Tempo"><span id="bpmv"></span></div>
   </header>
   <section id="seq" aria-label="Sequence: which voices play in each of 16 bars"></section>
@@ -99,7 +103,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radiu
 
   <div id="formula" aria-live="off"></div>
   <div id="knobs"></div>
-  <p class="hint">Click the graph to add or remove hits. On acid, click a note again for accent, again for slide. The switches on the left show or hide a voice; the sequence on top sets which voices play in each bar. Space plays.</p>
+  <p class="hint">Click the graph to add or remove hits. On acid, click a note again for accent, again for slide. The switches on the left show or hide a voice. Bars sets how long the sequence is; click it to choose which voices play in each bar. Space plays.</p>
 </div>
 
 <script>
@@ -165,7 +169,10 @@ const SCENES=[
   set:{kick:{pitch:46,decay:.45,drive:1.2,level:.7},bass:{cut:180,decay:.7},hat:{level:.25}},
   pat:{kick:b('x.......x.......'),bass:b('x.......x.......'),clap:b('................'),hat:b('..x...x...x...x.'),open:b('................'),acid:a('- - - - 4 - - - - - - 7 - - - -')}}
 ];
-for(const s of SCENES){s.P=defaults();for(const v in s.set)Object.assign(s.P[v],s.set[v]);s.arr={};for(const v of TABS)s.arr[v]=b(ARR[v])}
+const PICK={1:[12],2:[4,12],4:[0,4,9,12],8:[0,2,4,6,8,10,12,14],16:[...Array(16).keys()]};
+let nBars=4;
+const arrange=s=>{s.arr={};for(const v of TABS)s.arr[v]=PICK[nBars].map(i=>ARR[v][i]==='x'?1:0)};
+for(const s of SCENES){s.P=defaults();for(const v in s.set)Object.assign(s.P[v],s.set[v]);arrange(s)}
 let scene=SCENES[0],pat=scene.pat,P=scene.P,bpm=scene.bpm,sel='kick';
 const SCALE=()=>MODES[scene.mode];
 const ROOT=()=>hz(scene.root);
@@ -270,7 +277,7 @@ function acid(i,t,sd){
   }
   if(!(s.s&&next))N.vca.gain.setTargetAtTime(0,t+sd*.55,.012);
 }
-const live=(v,bar)=>ON[v]&&!!scene.arr[v][bar];   // a voice sounds if its switch is on and its bar is lit
+const live=(v,bar)=>ON[v]&&!!scene.arr[v][bar%nBars];   // a voice sounds if its switch is on and its bar is lit
 function fire(i,t,bar){
   const sd=60/bpm/4;
   if(pat.kick[i]&&live('kick',bar))kick(t);
@@ -288,7 +295,7 @@ function tick(){
   const sd=60/bpm/4;
   while(nextT<ac.currentTime+.1){
     const sw=step%2?(scene.swing/100-.5)*2*sd:0;fire(step,nextT+sw,bar);queue.push({s:step,b:bar,t:nextT});nextT+=sd;
-    if(++step===16){step=0;bar=nextBar!=null?nextBar:(bar+1)%16;nextBar=null}
+    if(++step===16){step=0;bar=nextBar!=null?nextBar:(bar+1)%nBars;nextBar=null}
   }
   timer=setTimeout(tick,25);
 }
@@ -323,7 +330,7 @@ function draw(){
   if(cur!==shownBar){shownBar=cur;for(const el of document.querySelectorAll('#seq [data-b]'))el.classList.toggle('now',+el.dataset.b===cur)}
   for(const v of ROWS){
     if(!ON[v])continue;
-    const [b0,b1]=BAND[v],top=Y(b0),bot=Y(b1),mid=(top+bot)/2,on=v===sel,resting=cur!=null&&!scene.arr[v][cur];
+    const [b0,b1]=BAND[v],top=Y(b0),bot=Y(b1),mid=(top+bot)/2,on=v===sel,resting=cur!=null&&!scene.arr[v][cur%nBars];
     // faint grid for the selected voice shows where a click lands
     if(on){cx.globalAlpha=.28;for(let i=0;i<16;i++){if(v==='acid'){for(let d=0;d<8;d++)dotAt(X(i)+sw*.3,acidY(d),1.3)}else if(!pat[v][i])dotAt(X(i)+sw*.3,v==='kick'||v==='bass'?bot:mid,1.6)}}
     cx.globalAlpha=resting?.16:on?1:.6;cx.lineWidth=2;
@@ -434,10 +441,14 @@ for(const el of $('side').children)el.onclick=()=>{
   renderSeq();
 };
 function renderSeq(){
-  let h='<div class="lab"></div>'+Array.from({length:16},(_,i)=>`<div class="num" data-b="${i}" title="start from bar ${i+1}">${i+1}</div>`).join('');
+  $('seq').hidden=nBars===1;$('seq').style.setProperty('--n',nBars);
+  for(const el of $('bars').querySelectorAll('button'))el.setAttribute('aria-pressed',+el.textContent===nBars);
+  let h='<div class="lab"></div>'+Array.from({length:nBars},(_,i)=>`<div class="num" data-b="${i}" title="start from bar ${i+1}">${i+1}</div>`).join('');
   for(const v of ROWS)h+=`<div class="lab${ON[v]?'':' off'}">${v}</div>`+scene.arr[v].map((x,i)=>`<div class="c${x?' on':''}${ON[v]?'':' off'}" data-v="${v}" data-b="${i}" title="${v}, bar ${i+1}"></div>`).join('');
   $('seq').innerHTML=h;shownBar=-1;
 }
+$('bars').insertAdjacentHTML('beforeend',[1,2,4,8,16].map(n=>`<button title="${n===1?'no sequence, just loop the pattern':n+' bar sequence'}">${n}</button>`).join(''));
+for(const el of $('bars').querySelectorAll('button'))el.onclick=()=>{nBars=+el.textContent;for(const s of SCENES)arrange(s);bar=bar%nBars;renderSeq()};
 $('seq').addEventListener('click',e=>{
   const c=e.target.closest('.c'),n=e.target.closest('.num');
   if(c){const a=scene.arr[c.dataset.v],i=+c.dataset.b;a[i]=a[i]?0:1;c.classList.toggle('on',!!a[i])}
