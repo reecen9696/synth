@@ -16,7 +16,8 @@
   color-scheme:light;
 }
 *{box-sizing:border-box}
-html,body{height:100%;margin:0}
+html{height:100%}
+body{min-height:100%;margin:0}
 body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:17px;
   display:flex;flex-direction:column;transition:background .4s,color .4s;overflow:auto}
 .wrap{flex:1;display:flex;flex-direction:column;gap:14px;width:100%;max-width:1180px;margin:0 auto;padding:18px 22px 22px;min-height:560px}
@@ -32,7 +33,7 @@ button:focus-visible,input:focus-visible,canvas:focus-visible{outline:1.5px dash
 .tempo{display:flex;align-items:center;gap:10px;font-variant-numeric:tabular-nums}
 .tempo input{width:120px}
 main{flex:1;position:relative;min-height:260px}
-canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;touch-action:manipulation}
+#cv{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;touch-action:manipulation}
 #formula{font-size:clamp(16px,2.1vw,23px);min-height:2.6em;overflow-x:auto;white-space:nowrap;padding:4px 0}
 #formula i{font-style:italic}
 #formula sup,#formula sub{font-size:.68em}
@@ -47,9 +48,73 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 input[type=range]::-moz-range-track{height:1.5px;background:var(--ink)}
 input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radius:50%;background:var(--ink)}
 .hint{font-size:14px;color:var(--faint);font-style:italic;margin:0}
+#screen.live{opacity:1}
+/* scene buttons carry their colour, the same one their graphs have in the sequence bar */
+.sw{display:inline-block;width:.6em;height:.6em;margin-right:.38em;border-radius:50%;background:var(--c);box-shadow:0 0 0 1.5px currentColor;vertical-align:.02em}
+/* sequence bar: a white strip above everything, so the four scene colours read against the same ground */
+#songbar{--ink:#18181b;--faint:rgba(24,24,27,.5);position:sticky;top:0;z-index:3;flex:none;background:#fff;color:var(--ink);
+  box-shadow:0 1px 0 rgba(0,0,0,.07),0 8px 20px -14px rgba(0,0,0,.4);user-select:none;-webkit-user-select:none}
+.sb{display:flex;align-items:center;gap:8px 18px;max-width:1180px;margin:0 auto;padding:6px 22px 4px 16px}
+#song{position:relative;flex:1;min-width:0;display:flex;align-items:flex-start;min-height:80px;padding:7px 4px 6px 6px;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
+.it{display:flex;align-items:flex-start;flex:none}
+.it.lifted{position:absolute;visibility:hidden;pointer-events:none}
+.tile{display:flex;flex-direction:column;gap:5px;padding:0;opacity:1;cursor:grab;touch-action:none;text-align:left}
+.tile:hover{opacity:1}
+.tile canvas,.ph{display:block;width:88px;height:50px;border-radius:6px}
+.tile canvas{background:var(--c);transition:transform .12s,opacity .2s}
+.tile:hover canvas{transform:translateY(-2px)}
+.tile.ed canvas{box-shadow:0 0 0 2px #fff,0 0 0 3.5px var(--ink)}
+.tile span{font-size:13px;font-style:italic;line-height:1;padding-left:1px;opacity:.5}
+.tile.ed span{opacity:1}
+.plus{flex:none;display:grid;place-items:center;width:30px;height:50px;padding:0;font-size:22px;line-height:1;opacity:.35}
+.plus:hover{opacity:.9}
+.slot .ph{background:color-mix(in srgb,var(--c) 40%,#fff);outline:1.5px dashed var(--ink);outline-offset:-1.5px}
+.slot~.empty{display:none}
+p.empty{align-self:center;margin:0 0 0 2px;max-width:34em}
+#song.off .tile canvas{opacity:.4}
+body.dragging #song .plus{opacity:.65}
+.new canvas{animation:pop .3s cubic-bezier(.2,1.4,.4,1)}
+@keyframes pop{from{transform:scale(.5);opacity:0}}
+#solo{flex:none;white-space:nowrap}
+.ghost{position:fixed;left:0;top:0;z-index:20;width:88px;height:50px;border-radius:6px;overflow:hidden;pointer-events:none;
+  box-shadow:0 12px 28px -8px rgba(0,0,0,.5);transition:opacity .15s}
+.ghost canvas{display:block;width:100%;height:100%}
+.ghost.out{opacity:.3}
+body.dragging,body.dragging *{cursor:grabbing!important}
+body.dragging{user-select:none;-webkit-user-select:none}
+@media (prefers-reduced-motion:reduce){.new canvas{animation:none}.tile canvas{transition:none}}
+/* keyboard: every letter as a keycap in the same ink. The piano-shaped ones move the song's key while held. */
+.deck{display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px 44px}
+.deck .hint{flex:1;min-width:220px;max-width:420px}
+.deck .hint+.hint{margin-top:6px}
+.kb{--u:min(50px,calc((100vw - 44px)/10.2));width:calc(var(--u)*10 - 6px);user-select:none;-webkit-user-select:none}
+.kb>label{display:flex;justify-content:space-between;font-style:italic;font-size:15px;margin-bottom:6px}
+.kb output{font-style:normal;font-variant-numeric:tabular-nums;opacity:.7}
+.kr{display:flex;gap:6px;margin-bottom:9px}
+.kr.r1{padding-left:calc(var(--u)*.25)}
+.kr.r2{padding-left:calc(var(--u)*.75)}
+.kr.r3{padding-left:calc(var(--u)*2.5);margin-bottom:3px}
+.cap{position:relative;flex:none;width:calc(var(--u) - 6px);height:calc(var(--u)*.82);padding:0;opacity:1;
+  border:1.5px solid var(--ink);border-radius:7px;box-shadow:0 3px 0 var(--ink);touch-action:none;
+  transition:transform .05s,box-shadow .05s,background-color .05s}
+.cap b{position:absolute;left:6px;top:4px;font-weight:400;font-size:calc(var(--u)*.34);line-height:1}
+.cap i{position:absolute;right:5px;bottom:4px;font-size:calc(var(--u)*.27);line-height:1;opacity:.75}
+.cap.off{opacity:.3}
+button.cap:hover{opacity:1;background:color-mix(in srgb,var(--ink) 9%,transparent)}
+.cap.lock,button.cap.lock:hover{transform:translateY(3px);box-shadow:0 0 0 var(--ink);background:color-mix(in srgb,var(--ink) 22%,transparent)}
+.cap.down,button.cap.down:hover{transform:translateY(3px);box-shadow:0 0 0 var(--ink);background:var(--ink);color:var(--bg)}
+.cap.now::before{content:'';position:absolute;right:4px;top:4px;width:7px;height:7px;border-radius:50%;background:var(--dot);box-shadow:0 0 0 1px var(--ink)}
+.cap.sp{width:calc(var(--u)*5 - 6px)}
+.cap.sp b{font-style:italic;font-size:15px}
 </style>
 </head>
 <body>
+<div id="songbar">
+  <div class="sb">
+    <div id="song" role="group" aria-label="Sequence. Plays left to right, on repeat."></div>
+    <button id="solo" hidden aria-pressed="false" title="Loop only the graph you are editing, instead of the sequence">loop one</button>
+  </div>
+</div>
 <div class="wrap">
   <header>
     <div id="scenes" role="group" aria-label="Scene"></div>
@@ -57,7 +122,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radiu
     <div class="tempo"><input id="bpm" type="range" min="118" max="150" step="1" aria-label="Tempo"><span id="bpmv"></span></div>
   </header>
 
-  <main><canvas id="cv" tabindex="0" aria-label="Pattern graph. Click to add or remove hits."></canvas></main>
+  <main><canvas id="cv" tabindex="0" aria-label="Pattern graph. Click to add or remove hits. Drag it up into the white bar to add it to the sequence."></canvas></main>
 
   <div class="bar">
     <button id="play" aria-label="Play"><i></i></button>
@@ -65,11 +130,19 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radiu
     <span class="sp"></span>
     <button id="new">new pattern</button>
     <button id="mute">mute</button>
+    <button id="screen">screen</button>
   </div>
 
   <div id="formula" aria-live="off"></div>
   <div id="knobs"></div>
-  <p class="hint">Click the graph to add or remove hits. On acid, click a note again for accent, again for slide. Space plays.</p>
+  <div class="deck">
+    <div class="kb" id="kb" role="group" aria-label="Key of the song"><label>key<output id="keyv">G phrygian</output></label></div>
+    <div>
+      <p class="hint">Hold a key to move the acid and bass into it: the middle row is the white notes, the row above the sharps. Hold several and each new note takes the next one, in the order you pressed them. Tap space while holding to lock it in; hold G and tap space to come home.</p>
+      <p class="hint">Click the graph to add or remove hits. On acid, click a note again for accent, again for slide. Space on its own plays.</p>
+      <p class="hint">Drag the graph up into the white bar to add it to the sequence. Click a graph there to edit it, drag it sideways to move it, or drag it off the bar to remove it.</p>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -78,6 +151,13 @@ const TABS=['kick','bass','clap','hat','open','acid'];
 const BAND={acid:[.05,.30],open:[.34,.40],hat:[.43,.49],clap:[.52,.58],kick:[.62,.84],bass:[.89,.97]};
 const SCALE=[0,1,3,5,7,8,10,12];           // phrygian, the dark techno mode
 const ROOT=49;                              // G1
+// key: the letters laid out like a piano, home row white notes, row above the sharps. G is home.
+// Value = semitones from G. Holding a key moves acid and bass there; letting go brings them back.
+const KEYMAP={A:-7,W:-6,S:-5,E:-4,D:-3,F:-2,T:-1,G:0,Y:1,H:2,U:3,J:4,K:5,O:6,L:7,P:8};
+const NOTE=['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
+const keyName=k=>NOTE[(k+19)%12];
+let tr=0;                                   // transpose being heard, in semitones (drives the formula and readout)
+let kSched=0,arpI=0,lock=null;              // transpose last scheduled, place in the held-key melody, keys locked with space
 const DEF={
   kick:[['pitch','pitch',35,70,49,'Hz'],['decay','decay',.1,.6,.3,'s'],['drive','drive',1,8,3,''],['rumble','rumble',0,1,.45,''],['level','level',0,1,.9,'']],
   bass:[['cut','cutoff',80,1200,300,'Hz'],['decay','decay',.05,.4,.16,'s'],['level','level',0,1,.6,'']],
@@ -122,7 +202,9 @@ function initAudio(){
   // master: compressor then soft clip, the usual techno bus glue
   const comp=ac.createDynamicsCompressor();comp.threshold.value=-12;comp.ratio.value=4;comp.attack.value=.005;comp.release.value=.12;
   const clip=ac.createWaveShaper();clip.curve=curve(1.5);
-  N.master=G(1);chain(N.master,comp,clip,G(.8),ac.destination);
+  N.master=G(1);N.out=G(.8);chain(N.master,comp,clip,N.out,ac.destination);
+  // spectrum of the finished mix, streamed to the visuals screen
+  N.an=ac.createAnalyser();N.an.fftSize=2048;N.an.smoothingTimeConstant=.5;clip.connect(N.an);
   // sidechain bus: everything low ducks when the kick hits
   N.duck=G(1);N.duck.connect(N.master);
   // noise source material
@@ -141,13 +223,15 @@ function initAudio(){
   N.f1=F('lowpass',400,11);N.f2=F('lowpass',400,.7);N.vca=G(0);N.aLv=G(.5);
   chain(N.ao,G(.6),N.f1,N.f2,as,N.vca,N.aLv,N.duck);const ad=G(.35);N.aLv.connect(ad);ad.connect(N.dSend);
   N.ao.start();
+  // key: one signal, in cents, added to the detune of the acid and every bass note, so a held key retunes them at once
+  N.tr=ac.createConstantSource();N.tr.offset.value=kSched*100;N.tr.connect(N.ao.detune);N.tr.start();
   applyParams();
 }
 function applyParams(){
   if(!ac)return;
   N.rOut.gain.value=P.kick.rumble*1.6;
   N.f1.Q.value=P.acid.res;N.aLv.gain.value=P.acid.level*.7;
-  N.dly.delayTime.value=60/bpm*.75;
+  N.dly.delayTime.value=60/(playing&&ps||scene).bpm*.75;
 }
 function noiseSrc(t,dur){const s=ac.createBufferSource();s.buffer=N.noise;s.loop=true;s.start(t,Math.random());s.stop(t+dur);return s}
 
@@ -164,7 +248,7 @@ function kick(t){
 }
 function bass(t){
   const p=P.bass,o=ac.createOscillator(),f=F('lowpass',p.cut,2),g=G(0);
-  o.type='sawtooth';o.frequency.value=ROOT;
+  o.type='sawtooth';o.frequency.value=ROOT;N.tr.connect(o.detune);o.onended=()=>N.tr.disconnect(o.detune);
   f.frequency.setValueAtTime(p.cut*3,t);f.frequency.setTargetAtTime(p.cut,t,.03);
   g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(1,t+.003);g.gain.setTargetAtTime(0,t+.01,p.decay/3);
   chain(o,f,g,G(p.level),N.duck);o.start(t);o.stop(t+p.decay*2+.1);
@@ -185,9 +269,10 @@ function hat(t,p){
     const o=ac.createOscillator(),og=G(.12);o.type='square';o.frequency.value=40*r*4;
     o.connect(og);og.connect(hp);o.start(t);o.stop(t+p.decay+.05)}
 }
-function acid(i,t,sd){
-  const s=pat.acid[i];if(!s)return;
-  const p=P.acid,prev=pat.acid[(i+15)%16],next=pat.acid[(i+1)%16],tied=prev&&prev.s;
+// s = this step, prev = the step that really played before it (it may be from another scene), next = the one after it in this pattern
+function acid(s,prev,next,t,sd){
+  if(!s){if(prev&&prev.s)N.vca.gain.setTargetAtTime(0,t,.012);return}   // a slide held the gate into a bar with no note here: close it
+  const p=P.acid,tied=prev&&prev.s;
   const f=ROOT*2*Math.pow(2,SCALE[s.d]/12);
   if(tied){N.ao.frequency.cancelScheduledValues(t);N.ao.frequency.setTargetAtTime(f,t,.02)}   // slide: glide, no retrigger
   else{
@@ -198,26 +283,49 @@ function acid(i,t,sd){
   }
   if(!(s.s&&next))N.vca.gain.setTargetAtTime(0,t+sd*.55,.012);
 }
-function fire(i,t){
-  const sd=60/bpm/4;
-  if(pat.kick[i]&&!M.kick)kick(t);
-  if(pat.bass[i]&&!M.bass)bass(t);
-  if(pat.clap[i]&&!M.clap)clap(t);
-  if(pat.hat[i]&&!M.hat)hat(t,P.hat);
-  if(pat.open[i]&&!M.open)hat(t,P.open);
-  if(!M.acid)acid(i,t,sd);
+let lastA=null;                             // the acid step fired last, so a slide ties to what really played
+function fire(i,t,sc){                      // sc = the scene sounding this bar, which may not be the one on screen
+  const pt=sc.pat,sd=60/sc.bpm/4;
+  if((pt.acid[i]&&!M.acid)||(pt.bass[i]&&!M.bass))arp(i,t,pt);
+  if(pt.kick[i]&&!M.kick)kick(t);
+  if(pt.bass[i]&&!M.bass)bass(t);
+  if(pt.clap[i]&&!M.clap)clap(t);
+  if(pt.hat[i]&&!M.hat)hat(t,P.hat);
+  if(pt.open[i]&&!M.open)hat(t,P.open);
+  if(!M.acid)acid(pt.acid[i],lastA,pt.acid[(i+1)%16],t,sd);
+  lastA=M.acid?null:pt.acid[i];
+  cue(i,t,pt);
 }
 
 /* ---------- clock: schedule 100 ms ahead on the audio clock, poll every 25 ms ---------- */
+// The sequence is the tiles in the white bar, one bar each, on repeat. With none, or with solo on, the graph on screen loops.
 let playing=false,step=0,nextT=0,timer,queue=[];
+let song=[],uid=0,cur=null,qi=0,solo=false,ps=null;   // cur = tile playing this bar, qi = its index, ps = scene scheduled last
+function nextTile(){
+  if(solo||!song.length)return null;
+  let i=song.indexOf(cur);if(i<0)i=Math.min(qi,song.length)-1;   // its tile was removed: carry on from where it stood
+  qi=(i+1)%song.length;return song[qi];
+}
 function tick(){
-  while(nextT<ac.currentTime+.1){fire(step,nextT);queue.push({s:step,t:nextT});nextT+=60/bpm/4;step=(step+1)%16}
+  while(nextT<ac.currentTime+.1){
+    if(step===0)cur=nextTile();
+    const sc=!solo&&cur?SCENES[cur.s]:scene,sd=60/sc.bpm/4;
+    if(sc!==ps){ps=sc;N.dly.delayTime.setValueAtTime(sd*3,nextT)}
+    fire(step,nextT,sc);queue.push({s:step,t:nextT,k:kSched,sd,sc,tile:!solo&&cur});
+    nextT+=sd;step=(step+1)%16;
+  }
   timer=setTimeout(tick,25);
+}
+function cursor(){   // what the speakers are playing now: the queued step whose time has come, pos in steps
+  if(!playing||!ac)return null;
+  const now=ac.currentTime;while(queue.length>1&&queue[1].t<=now)queue.shift();
+  const q=queue[0];if(!q||q.t>now)return null;
+  q.pos=q.s+Math.min((now-q.t)/q.sd,1);return q;
 }
 function toggle(){
   initAudio();
-  if(playing){clearTimeout(timer);playing=false;queue=[];N.vca.gain.cancelScheduledValues(0);N.vca.gain.setTargetAtTime(0,ac.currentTime,.01)}
-  else{ac.resume();step=0;nextT=ac.currentTime+.06;playing=true;tick()}
+  if(playing){clearTimeout(timer);playing=false;queue=[];cur=null;N.vca.gain.cancelScheduledValues(0);N.vca.gain.setTargetAtTime(0,ac.currentTime,.01)}
+  else{ac.resume();step=0;cur=null;qi=0;ps=null;lastA=null;nextT=ac.currentTime+.06;playing=true;tick()}
   const pb=document.getElementById('play');pb.classList.toggle('on',playing);pb.setAttribute('aria-label',playing?'Stop':'Play');
 }
 
@@ -226,56 +334,62 @@ const cv=document.getElementById('cv'),cx=cv.getContext('2d');
 let W=0,H=0,L=34,R=30,T=14,B=10;
 new ResizeObserver(()=>{const r=cv.getBoundingClientRect(),d=devicePixelRatio||1;W=r.width;H=r.height;cv.width=W*d;cv.height=H*d;cx.setTransform(d,0,0,d,0,0)}).observe(cv);
 const X=i=>L+i*(W-L-R)/16,Y=n=>T+n*(H-T-B);
-const acidY=d=>Y(BAND.acid[1])-(d/7)*(Y(BAND.acid[1])-Y(BAND.acid[0]));
-function draw(){
-  requestAnimationFrame(draw);if(!W)return;
-  cx.clearRect(0,0,W,H);
-  const ink=scene.ink,sw=X(1)-X(0),sd=60/bpm/4;
-  cx.strokeStyle=cx.fillStyle=ink;cx.lineCap='round';cx.lineJoin='round';
-  // axes
-  cx.globalAlpha=.8;cx.lineWidth=1.2;const ax=Y(.70);
-  cx.beginPath();cx.moveTo(X(0)-12,ax);cx.lineTo(X(16)+16,ax);cx.moveTo(X(0),Y(1));cx.lineTo(X(0),T);cx.stroke();
-  cx.beginPath();cx.moveTo(X(16)+22,ax);cx.lineTo(X(16)+14,ax-3.5);cx.lineTo(X(16)+14,ax+3.5);cx.fill();
-  cx.beginPath();cx.moveTo(X(0),T-8);cx.lineTo(X(0)-3.5,T);cx.lineTo(X(0)+3.5,T);cx.fill();
-  cx.beginPath();for(let i=4;i<=16;i+=4){cx.moveTo(X(i),ax-4);cx.lineTo(X(i),ax+4)}cx.stroke();
-  cx.font='italic 16px "STIX Two Text",Times,serif';cx.fillText('x',X(16)+18,ax+18);cx.fillText('y',X(0)-20,T+6);
-
+// one scene's pattern as functions of time, into any box. The big graph and the small ones in the white bar both use it.
+function plot(g,sc,X,Y,lw,sel){
+  const pt=sc.pat,sw=X(1)-X(0),sd=60/sc.bpm/4,aY=d=>Y(BAND.acid[1])-(d/7)*(Y(BAND.acid[1])-Y(BAND.acid[0]));
+  g.strokeStyle=g.fillStyle=sc.ink;g.lineCap='round';g.lineJoin='round';
   for(const v of ['acid','open','hat','clap','kick','bass']){
     const [b0,b1]=BAND[v],top=Y(b0),bot=Y(b1),mid=(top+bot)/2,on=v===sel;
     // faint grid for the selected voice shows where a click lands
-    if(on){cx.globalAlpha=.28;for(let i=0;i<16;i++){if(v==='acid'){for(let d=0;d<8;d++)dotAt(X(i)+sw*.3,acidY(d),1.3)}else if(!pat[v][i])dotAt(X(i)+sw*.3,v==='kick'||v==='bass'?bot:mid,1.6)}}
-    cx.globalAlpha=M[v]?.18:on?1:.6;cx.lineWidth=2;
+    if(on){g.globalAlpha=.28;for(let i=0;i<16;i++){if(v==='acid'){for(let d=0;d<8;d++)dotAt(g,X(i)+sw*.3,aY(d),1.3)}else if(!pt[v][i])dotAt(g,X(i)+sw*.3,v==='kick'||v==='bass'?bot:mid,1.6)}}
+    g.globalAlpha=M[v]?.18:sel?(on?1:.6):.9;g.lineWidth=lw;
     for(let i=0;i<16;i++){
-      const s=pat[v][i];if(!s)continue;const x=X(i);
-      cx.beginPath();
+      const s=pt[v][i];if(!s)continue;const x=X(i);
+      g.beginPath();
       if(v==='kick'||v==='bass'){
         const tc=(v==='kick'?P.kick.decay/3.5:P.bass.decay/3)/sd;let len=v==='kick'?4:1.4;
-        for(let j=1;j<=4;j++)if(pat[v][(i+j)%16]){len=Math.min(len,j-.12);break}
+        for(let j=1;j<=4;j++)if(pt[v][(i+j)%16]){len=Math.min(len,j-.12);break}
         len=Math.min(len,16-i);
-        for(let u=0;u<=len;u+=.03){const y=bot-(bot-top)*Math.exp(-u/tc);u?cx.lineTo(x+u*sw,y):cx.moveTo(x,y)}
+        for(let u=0;u<=len;u+=.03){const y=bot-(bot-top)*Math.exp(-u/tc);u?g.lineTo(x+u*sw,y):g.moveTo(x,y)}
       }else if(v==='hat'||v==='open'){
-        const l=Math.min(Math.max(P[v].decay/sd,.18),v==='open'?2.5:.8);cx.moveTo(x,mid);cx.lineTo(Math.min(x+l*sw,X(16)),mid);
+        const l=Math.min(Math.max(P[v].decay/sd,.18),v==='open'?2.5:.8);g.moveTo(x,mid);g.lineTo(Math.min(x+l*sw,X(16)),mid);
       }else if(v==='clap'){
-        cx.moveTo(x,top);cx.lineTo(x+sw*.35,top);cx.lineTo(x+sw*.6,bot);cx.lineTo(x+sw*(.6+Math.min(P.clap.decay/sd,1)*.35),bot);
+        g.moveTo(x,top);g.lineTo(x+sw*.35,top);g.lineTo(x+sw*.6,bot);g.lineTo(x+sw*(.6+Math.min(P.clap.decay/sd,1)*.35),bot);
       }else{
-        const y=acidY(s.d),nx=pat.acid[(i+1)%16];cx.lineWidth=s.a?4.2:2;
-        cx.moveTo(x,y);cx.lineTo(x+sw*.62,y);if(s.s&&nx&&i<15)cx.lineTo(x+sw,acidY(nx.d));else if(s.s)cx.lineTo(x+sw*.95,y);
+        const y=aY(s.d),nx=pt.acid[(i+1)%16];g.lineWidth=s.a?lw*2.1:lw;
+        g.moveTo(x,y);g.lineTo(x+sw*.62,y);if(s.s&&nx&&i<15)g.lineTo(x+sw,aY(nx.d));else if(s.s)g.lineTo(x+sw*.95,y);
       }
-      cx.stroke();
+      g.stroke();
     }
   }
-  // playhead
-  let pos=0;
-  if(playing&&ac){const now=ac.currentTime;while(queue.length>1&&queue[1].t<=now)queue.shift();
-    if(queue.length&&queue[0].t<=now)pos=queue[0].s+Math.min((now-queue[0].t)/sd,1)}
-  const px=X(pos);cx.globalAlpha=.18;cx.lineWidth=1;cx.beginPath();cx.moveTo(px,T);cx.lineTo(px,Y(1));cx.stroke();
-  cx.globalAlpha=1;cx.fillStyle=scene.dot;cx.beginPath();cx.arc(px,ax,8,0,7);cx.fill();
-  cx.strokeStyle=ink;cx.lineWidth=1;cx.stroke();
 }
-function dotAt(x,y,r){cx.beginPath();cx.arc(x,y,r,0,7);cx.fill()}
+function draw(){
+  requestAnimationFrame(draw);showKey();
+  const q=cursor();
+  if(W){
+    cx.clearRect(0,0,W,H);
+    const ink=scene.ink;
+    cx.strokeStyle=cx.fillStyle=ink;cx.lineCap='round';cx.lineJoin='round';
+    // axes
+    cx.globalAlpha=.8;cx.lineWidth=1.2;const ax=Y(.70);
+    cx.beginPath();cx.moveTo(X(0)-12,ax);cx.lineTo(X(16)+16,ax);cx.moveTo(X(0),Y(1));cx.lineTo(X(0),T);cx.stroke();
+    cx.beginPath();cx.moveTo(X(16)+22,ax);cx.lineTo(X(16)+14,ax-3.5);cx.lineTo(X(16)+14,ax+3.5);cx.fill();
+    cx.beginPath();cx.moveTo(X(0),T-8);cx.lineTo(X(0)-3.5,T);cx.lineTo(X(0)+3.5,T);cx.fill();
+    cx.beginPath();for(let i=4;i<=16;i+=4){cx.moveTo(X(i),ax-4);cx.lineTo(X(i),ax+4)}cx.stroke();
+    cx.font='italic 16px "STIX Two Text",Times,serif';cx.fillText('x',X(16)+18,ax+18);cx.fillText('y',X(0)-20,T+6);
+    plot(cx,scene,X,Y,2,sel);
+    // playhead. The dot is the colour of what you hear: this graph's own dot, or the colour of the scene the sequence is on.
+    const pos=q?q.pos:0,here=!q||q.sc===scene,px=X(pos);
+    cx.strokeStyle=ink;cx.globalAlpha=.18;cx.lineWidth=1;cx.beginPath();cx.moveTo(px,T);cx.lineTo(px,Y(1));cx.stroke();
+    cx.globalAlpha=1;cx.fillStyle=here?scene.dot:q.sc.bg;cx.beginPath();cx.arc(px,ax,8,0,7);cx.fill();
+    cx.lineWidth=here?1:1.5;cx.stroke();
+  }
+  if(song.length)drawSong(q);
+}
+function dotAt(g,x,y,r){g.beginPath();g.arc(x,y,r,0,7);g.fill()}
 
-cv.addEventListener('pointerdown',e=>{
-  const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
+function hit(px,py){   // a tap on the graph (a drag lifts it into the sequence instead, see the sequence bar below)
+  const r=cv.getBoundingClientRect(),x=px-r.left,y=py-r.top;
   const i=Math.floor((x-L)/((W-L-R)/16));if(i<0||i>15)return;
   const n=(y-T)/(H-T-B);let v=null,best=9;
   for(const k in BAND){const [b0,b1]=BAND[k],d=n<b0?b0-n:n>b1?n-b1:0;if(d<best){best=d;v=k}}
@@ -286,18 +400,18 @@ cv.addEventListener('pointerdown',e=>{
     else if(!s.a&&!s.s)s.a=true;else if(s.a&&!s.s){s.a=false;s.s=true}else pat.acid[i]=null;
   }else pat[v][i]=pat[v][i]?0:1;
   if(ac&&!playing&&pat[v][i]){const t=ac.currentTime+.01;ac.resume();
-    ({kick,bass,clap,hat:t=>hat(t,P.hat),open:t=>hat(t,P.open),acid:t=>{acid(i,t,60/bpm/4);N.vca.gain.setTargetAtTime(0,t+.25,.012)}})[v](t)}
-});
+    ({kick,bass,clap,hat:t=>hat(t,P.hat),open:t=>hat(t,P.open),acid:t=>{acid(pat.acid[i],null,null,t,60/bpm/4);N.vca.gain.setTargetAtTime(0,t+.25,.012)}})[v](t)}
+}
 
 /* ---------- formula and controls ---------- */
 const fmt=v=>v>=100?Math.round(v):v>=10?v.toFixed(1):v.toFixed(2);
 const fr=(a,b)=>`<span class="fr"><span>${a}</span><span>${b}</span></span>`;
 const FORM={
   kick:p=>`<i>y</i> = tanh(${fmt(p.drive)} sin 2π∫<i>f</i> d<i>t</i>) · <i>e</i><sup>−3.5<i>t</i>/${fmt(p.decay)}</sup> ,&emsp;<i>f</i> = ${fmt(p.pitch)}(1 + 5<i>e</i><sup>−<i>t</i>/0.016</sup>) ,&emsp;rumble = ${fmt(p.rumble)} · lp<sub>110</sub>(reverb(<i>y</i>))`,
-  bass:p=>`<i>y</i> = lp<sub>${fmt(p.cut)}</sub>(saw(${ROOT}<i>t</i>)) · <i>e</i><sup>−3<i>t</i>/${fmt(p.decay)}</sup> · (1 − 0.85 kick)`,
+  bass:p=>`<i>y</i> = lp<sub>${fmt(p.cut)}</sub>(saw(${+(ROOT*2**(tr/12)).toFixed(1)}<i>t</i>)) · <i>e</i><sup>−3<i>t</i>/${fmt(p.decay)}</sup> · (1 − 0.85 kick)`,
   clap:p=>`<i>y</i> = bp<sub>${fmt(p.tone)}</sub>(noise) · max(<i>e</i><sup>−(<i>t</i> mod 0.011)/0.005</sup> if <i>t</i> &lt; 0.033 , <i>e</i><sup>−(<i>t</i>−0.033)/${fmt(p.decay)}</sup>)`,
   hat:p=>`<i>y</i> = hp<sub>${fmt(p.tone)}</sub>(noise + Σ<sub><i>k</i>=1..6</sub> sq(160<i>r<sub>k</sub>t</i>)) · <i>e</i><sup>−<i>t</i>/${fmt(p.decay)}</sup>`,
-  acid:p=>`<i>y</i> = lp<sup>4</sup><sub><i>c</i>(<i>t</i>)</sub>(saw(98 · 2<sup>${fr('<i>n</i>','12')}</sup><i>t</i>)) ,&emsp;<i>c</i>(<i>t</i>) = ${fmt(p.cut)} + ${fmt(p.env)}<i>e</i><sup>−3<i>t</i>/${fmt(p.decay)}</sup> ,&emsp;<i>Q</i> = ${fmt(p.res)}`
+  acid:p=>`<i>y</i> = lp<sup>4</sup><sub><i>c</i>(<i>t</i>)</sub>(saw(98 · 2<sup>${fr('<i>n</i>'+(tr?` ${tr>0?'+':'−'} ${Math.abs(tr)}`:''),'12')}</sup><i>t</i>)) ,&emsp;<i>c</i>(<i>t</i>) = ${fmt(p.cut)} + ${fmt(p.env)}<i>e</i><sup>−3<i>t</i>/${fmt(p.decay)}</sup> ,&emsp;<i>Q</i> = ${fmt(p.res)}`
 };
 FORM.open=FORM.hat;
 const $=id=>document.getElementById(id);
@@ -315,7 +429,7 @@ function setScene(s){
   const st=document.documentElement.style;st.setProperty('--bg',s.bg);st.setProperty('--ink',s.ink);st.setProperty('--dot',s.dot);
   st.setProperty('--faint',s.ink+'99');
   for(const el of $('scenes').children)el.setAttribute('aria-pressed',el.textContent===s.name);
-  $('bpm').value=bpm;$('bpmv').textContent=bpm+' bpm';applyParams();
+  $('bpm').value=bpm;$('bpmv').textContent=bpm+' bpm';applyParams();songUI();
 }
 const rnd=p=>Math.random()<p;
 function randomise(v){
@@ -330,7 +444,7 @@ function randomise(v){
   }
 }
 
-$('scenes').innerHTML=SCENES.map(s=>`<button>${s.name}</button>`).join(' ');
+$('scenes').innerHTML=SCENES.map(s=>`<button><i class="sw" style="--c:${s.bg}"></i>${s.name}</button>`).join(' ');
 [...$('scenes').children].forEach((el,i)=>el.onclick=()=>setScene(SCENES[i]));
 $('voices').innerHTML=TABS.map(v=>`<button data-v="${v}">${v}</button>`).join(' ');
 for(const el of $('voices').children)el.onclick=()=>select(el.dataset.v);
@@ -338,9 +452,217 @@ $('bpm').oninput=e=>{bpm=scene.bpm=+e.target.value;$('bpmv').textContent=bpm+' b
 $('play').onclick=toggle;
 $('new').onclick=()=>randomise(sel);
 $('mute').onclick=()=>{M[sel]=!M[sel];if(sel==='acid'&&ac)N.vca.gain.setTargetAtTime(0,ac.currentTime,.01);select(sel)};
-addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();if(!e.repeat)toggle()}});
-addEventListener('keyup',e=>{if(e.code==='Space')e.preventDefault()});
-setScene(SCENES[0]);select('kick');draw();
+
+/* ---------- keyboard: hold a letter to move the song to another key, let go to come home ----------
+   One key held: the song sits in that key. Several held: each new acid or bass note takes the next one,
+   in the order they went down, so the held keys become a melody. Space while holding locks them in. */
+const held=[];                              // keys down, in the order they went down
+const mapped=()=>held.filter(L=>L in KEYMAP);
+const seq=()=>{const h=mapped();return h.length?h:lock||[]};   // what the song cycles through right now
+const same=(a,b)=>!!a&&!!b&&a.join()===b.join();
+function retune(k){   // move now, not on the next note, and drop the per-note moves already scheduled
+  kSched=k;if(!ac)return;
+  const now=ac.currentTime;N.tr.offset.cancelScheduledValues(now);N.tr.offset.setTargetAtTime(k*100,now,.004);
+  for(const q of queue)q.k=k;               // the step sounding now moved too, so the keycaps should show it
+}
+function arp(i,t,pt){    // called by the clock on every step where acid or bass plays a new note; pt = the pattern sounding
+  const s=seq(),k=s.length?KEYMAP[s[arpI++%s.length]]:0;if(k===kSched)return;
+  const p=lastA,tied=p&&p.s&&pt.acid[i]&&!M.acid;   // an acid slide glides into the new key too
+  kSched=k;if(tied)N.tr.offset.setTargetAtTime(k*100,t,.02);else N.tr.offset.setValueAtTime(k*100,t);
+}
+const settle=()=>{const s=seq();if(s.length<2||!s.some(L=>KEYMAP[L]===kSched)){arpI=1;retune(s.length?KEYMAP[s[0]]:0)}};   // left a key that's no longer held: jump back now
+function press(L){if(held.includes(L))return;held.push(L);if(L in KEYMAP){arpI=0;retune(KEYMAP[L])}}
+function lift(L){const i=held.indexOf(L);if(i<0)return;held.splice(i,1);if(L in KEYMAP)settle()}
+const unlocks=h=>lock&&(same(h,lock)||h.join()==='G');   // space on the locked keys, or on home, lets go
+function space(){
+  const h=mapped();if(!h.length){toggle();return}
+  lock=unlocks(h)||h.join()==='G'?null:h.slice();
+}
+let shown='';
+function showKey(){   // the keycaps, readout and formula follow the note being heard, not the one being scheduled
+  let k=kSched;
+  if(playing&&ac){const now=ac.currentTime;while(queue.length>1&&queue[1].t<=now)queue.shift();if(queue[0]&&queue[0].t<=now)k=queue[0].k}
+  const h=mapped(),sig=[k,held,lock,playing].join('|');if(sig===shown)return;shown=sig;
+  for(const el of $('kb').querySelectorAll('.cap')){const L=el.dataset.k;
+    el.classList.toggle('down',held.includes(L));el.classList.toggle('lock',!!lock&&lock.includes(L));if(L in KEYMAP)el.classList.toggle('now',KEYMAP[L]===k)}
+  $('spv').textContent=h.length?(unlocks(h)?'unlock':'lock'):playing?'stop':'play';
+  $('keyv').textContent=keyName(k)+' phrygian'+(k?` ${k>0?'+':'−'}${Math.abs(k)}`:'')+(lock&&!h.length?' locked':'');
+  if(k!==tr){tr=k;formula()}
+}
+const cap=L=>L in KEYMAP
+  ?`<button class="cap${L==='G'?' now':''}" data-k="${L}" tabindex="-1" aria-label="${L}, hold for ${keyName(KEYMAP[L])}"><b>${L}</b><i>${keyName(KEYMAP[L])}</i></button>`
+  :`<span class="cap off" data-k="${L}"><b>${L}</b></span>`;
+$('kb').insertAdjacentHTML('beforeend',['QWERTYUIOP','ASDFGHJKL','ZXCVBNM'].map((r,j)=>`<div class="kr r${j}">${[...r].map(cap).join('')}</div>`).join('')
+  +`<div class="kr r3"><button class="cap sp" data-k="Space" tabindex="-1" aria-label="Space: play or stop, or lock the held keys"><b>space</b><i id="spv">play</i></button></div>`);
+for(const el of $('kb').querySelectorAll('button.cap')){
+  const L=el.dataset.k;
+  el.onpointerdown=e=>{e.preventDefault();el.setPointerCapture(e.pointerId);press(L)};
+  el.onpointerup=el.onpointercancel=el.onlostpointercapture=()=>lift(L);
+}
+$('kb').querySelector('.sp').onclick=space;    // click, not pointerdown, so touch screens may start audio
+const letter=e=>e.code==='Space'?'Space':e.code.startsWith('Key')?e.code.slice(3):null;   // physical position, like the drawing
+addEventListener('keydown',e=>{
+  const L=letter(e);if(!L||(L!=='Space'&&(e.ctrlKey||e.metaKey||e.altKey)))return;
+  e.preventDefault();if(e.repeat)return;
+  press(L);if(L==='Space')space();
+});
+addEventListener('keyup',e=>{const L=letter(e);if(L){if(L==='Space')e.preventDefault();lift(L)}});
+addEventListener('blur',()=>{held.length=0;settle()});   // alt-tab while holding must not leave the song stuck in another key
+
+/* ---------- sequence bar: drag the big graph up into the white bar to chain it; the chain plays on repeat, one bar per graph ---------- */
+// A tile is {id, s}, s = scene index. Tiles point at scenes, so editing a scene changes every tile of its colour.
+const MW=88,MH=50,mX=i=>4+i*(MW-8)/16,mY=n=>3+n*(MH-6);
+const minis=SCENES.map(()=>document.createElement('canvas'));
+function mini(k){   // scene k drawn small, once a frame, then copied into each of its tiles
+  const d=devicePixelRatio||1,c=minis[k],sc=SCENES[k],g=c.getContext('2d');
+  if(c.width!==Math.round(MW*d)){c.width=Math.round(MW*d);c.height=Math.round(MH*d)}
+  g.setTransform(d,0,0,d,0,0);g.globalAlpha=1;g.fillStyle=sc.bg;g.fillRect(0,0,MW,MH);
+  g.strokeStyle=sc.ink;g.globalAlpha=.3;g.lineWidth=.75;g.beginPath();g.moveTo(mX(0),mY(.7));g.lineTo(mX(16),mY(.7));g.stroke();
+  plot(g,sc,mX,mY,1.1,null);
+  return c;
+}
+function drawSong(q){
+  for(const k of new Set(song.map(t=>t.s)))mini(k);
+  for(const t of song){
+    const c=t.cv,m=minis[t.s],g=t.g;if(!c)continue;
+    if(c.width!==m.width){c.width=m.width;c.height=m.height}
+    g.setTransform(1,0,0,1,0,0);g.globalAlpha=1;g.drawImage(m,0,0);
+    if(q&&q.tile===t){   // the bar the speakers are on
+      const sc=SCENES[t.s],x=mX(q.pos),d=m.width/MW;g.setTransform(d,0,0,d,0,0);
+      g.strokeStyle=sc.ink;g.globalAlpha=.35;g.lineWidth=1;g.beginPath();g.moveTo(x,2);g.lineTo(x,MH-2);g.stroke();
+      g.globalAlpha=1;g.fillStyle=sc.dot;g.beginPath();g.arc(x,mY(.7),3.2,0,7);g.fill();g.lineWidth=.8;g.stroke();
+    }
+  }
+}
+const tileOf=el=>song.find(t=>t.id===+el.closest('.it').dataset.id);
+function renderSong(fresh){
+  if(!song.length)solo=false;
+  const box=$('song'),n=song.length;
+  box.innerHTML=song.map((t,i)=>{const sc=SCENES[t.s];return `<div class="it${t===fresh?' new':''}" data-id="${t.id}">`
+      +`<button class="tile" style="--c:${sc.bg}" aria-label="${sc.name}, bar ${i+1} of ${n}" title="click to edit · drag to move · drag off the bar to remove"><canvas></canvas><span>${sc.name}</span></button>`
+      +`<button class="plus" data-at="${i+1}" aria-label="Add the graph you are editing after bar ${i+1}">+</button></div>`}).join('')
+    +(n?'':'<button class="plus empty" data-at="0" aria-label="Add the graph you are editing">+</button><p class="hint empty">Drag the graph up here, as many times as you like. The sequence plays on repeat.</p>');
+  for(const el of box.querySelectorAll('.it')){const t=tileOf(el);t.cv=el.querySelector('canvas');t.g=t.cv.getContext('2d')}
+  if(fresh){const r=fresh.cv.getBoundingClientRect(),bx=box.getBoundingClientRect();if(r.right>bx.right-34)box.scrollLeft+=r.right-bx.right+40}
+  songUI();
+  if(n)drawSong(cursor());   // paint now so a new tile never shows a blank frame
+}
+function songUI(){
+  for(const el of $('song').querySelectorAll('.it[data-id]'))el.firstElementChild.classList.toggle('ed',SCENES[tileOf(el).s]===scene);
+  const so=$('solo');so.hidden=!song.length;so.textContent='loop '+scene.name;so.setAttribute('aria-pressed',solo);
+  $('song').classList.toggle('off',solo);
+}
+
+// drag: the big graph or a tile. Past a few pixels a small copy follows the pointer, and over the bar a gap opens where it will land.
+let pend=null,drag=null,noClick=false;
+function liftTile(){
+  const k=pend.s,m=mini(k),gh=document.createElement('div'),c=document.createElement('canvas'),sl=document.createElement('div');
+  c.width=m.width;c.height=m.height;c.getContext('2d').drawImage(m,0,0);gh.className='ghost';gh.append(c);document.body.append(gh);
+  sl.className='it slot';sl.style.setProperty('--c',SCENES[k].bg);sl.innerHTML='<span class="ph"></span><span class="plus">+</span>';
+  drag={s:k,tile:pend.tile,at:-1,gh,sl,ox:pend.ox??MW/2,oy:pend.oy??MH/2};
+  if(pend.el)pend.el.classList.add('lifted');
+  document.body.classList.add('dragging');getSelection().removeAllRanges();
+}
+function hover(x,y){
+  const {gh,sl}=drag,box=$('song');
+  gh.style.transform=`translate(${x-drag.ox}px,${y-drag.oy}px) rotate(-3deg)`;
+  const near=y<$('songbar').getBoundingClientRect().bottom+48;
+  gh.classList.toggle('out',!near&&!!drag.tile);   // a tile held away from the bar will be removed
+  if(!near){if(drag.at>=0){sl.remove();drag.at=-1}return}
+  const r=box.getBoundingClientRect();
+  if(x>r.right-40)box.scrollLeft+=16;else if(x<r.left+40)box.scrollLeft-=16;
+  const its=[...box.querySelectorAll('.it:not(.lifted):not(.slot)')];
+  let at=its.length;
+  for(let k=0;k<its.length;k++){const c=its[k].firstElementChild.getBoundingClientRect();if(x<c.left+c.width/2){at=k;break}}
+  if(at!==drag.at){box.insertBefore(sl,its[at]||box.querySelector('.empty'));drag.at=at}
+}
+function drop(ok){
+  const {tile,s,at,gh,sl}=drag;drag=null;
+  gh.remove();sl.remove();document.body.classList.remove('dragging');
+  if(tile){noClick=true;setTimeout(()=>noClick=false)}   // the pointerup that ends a drag is not a click on the tile
+  if(!ok){renderSong();return}
+  if(at<0){if(tile)song=song.filter(t=>t!==tile);renderSong();return}   // let go away from the bar: a tile is removed, the graph is just dropped
+  const t=tile||{id:++uid,s};song=song.filter(x=>x!==t);song.splice(at,0,t);renderSong(tile?null:t);
+}
+cv.addEventListener('pointerdown',e=>{
+  if(e.button)return;
+  const x=e.clientX,y=e.clientY;
+  pend={id:e.pointerId,x,y,s:SCENES.indexOf(scene),tap:()=>hit(x,y)};   // a tap edits hits, a drag lifts the graph
+  try{cv.setPointerCapture(e.pointerId)}catch{}
+});
+$('song').addEventListener('pointerdown',e=>{
+  const el=e.target.closest('.tile');if(!el||e.button)return;
+  const t=tileOf(el),r=el.firstElementChild.getBoundingClientRect();
+  pend={id:e.pointerId,x:e.clientX,y:e.clientY,s:t.s,tile:t,el:el.parentElement,ox:e.clientX-r.left,oy:Math.min(e.clientY-r.top,MH)};
+  try{el.setPointerCapture(e.pointerId)}catch{}
+});
+addEventListener('pointermove',e=>{
+  if(!pend||e.pointerId!==pend.id)return;
+  if(!drag&&Math.hypot(e.clientX-pend.x,e.clientY-pend.y)>(pend.tile?5:10))liftTile();
+  if(drag)hover(e.clientX,e.clientY);
+});
+addEventListener('pointerup',e=>{
+  if(!pend||e.pointerId!==pend.id)return;
+  const p=pend;pend=null;
+  if(drag)drop(true);else if(p.tap)p.tap();
+});
+addEventListener('pointercancel',e=>{if(pend&&e.pointerId===pend.id){pend=null;if(drag)drop(false)}});
+addEventListener('keydown',e=>{if(e.key==='Escape'&&drag){pend=null;drop(false)}});
+addEventListener('blur',()=>{if(drag){pend=null;drop(false)}});
+$('song').addEventListener('click',e=>{
+  const p=e.target.closest('button.plus');
+  if(p){const t={id:++uid,s:SCENES.indexOf(scene)};song.splice(+p.dataset.at,0,t);renderSong(t);$('song').querySelector(`[data-id="${t.id}"] .plus`).focus();return}
+  const el=e.target.closest('.tile');if(el&&!noClick)setScene(SCENES[tileOf(el).s]);
+});
+$('song').addEventListener('keydown',e=>{   // keyboard: Delete removes a tile, Shift+arrows move it
+  const el=e.target.closest('.tile');if(!el)return;
+  const t=tileOf(el),i=song.indexOf(t);
+  if(e.key==='Delete'||e.key==='Backspace'){
+    e.preventDefault();song.splice(i,1);renderSong();
+    const ts=$('song').querySelectorAll('.tile');(ts[Math.min(i,ts.length-1)]||$('song').querySelector('.plus')).focus();
+  }else if(e.shiftKey&&(e.key==='ArrowLeft'||e.key==='ArrowRight')){
+    e.preventDefault();const j=i+(e.key==='ArrowLeft'?-1:1);if(j<0||j>=song.length)return;
+    song.splice(i,1);song.splice(j,0,t);renderSong();$('song').querySelector(`[data-id="${t.id}"] .tile`).focus();
+  }
+});
+$('song').addEventListener('wheel',e=>{const bx=e.currentTarget;if(bx.scrollWidth>bx.clientWidth&&Math.abs(e.deltaY)>Math.abs(e.deltaX)){bx.scrollLeft+=e.deltaY;e.preventDefault()}},{passive:false});
+$('solo').onclick=()=>{solo=!solo;if(!solo){cur=null;qi=0}songUI()};   // back to the sequence: it starts from the top at the next bar
+
+renderSong();setScene(SCENES[0]);select('kick');draw();
+
+/* ---------- visuals link: stream state, hits and spectrum to the visuals server (../visuals/server.js) ---------- */
+// Runs on a timer, not requestAnimationFrame, so it keeps going when the screen window covers this one.
+const VIS=new URLSearchParams(location.search).get('visuals')||'localhost:5180';
+let ws=null,live=false,sent='',fbuf=null;
+function link(){
+  try{ws=new WebSocket('ws://'+VIS+'/ws')}catch{return}
+  ws.onopen=()=>{live=true;sent='';$('screen').classList.add('live');$('screen').title='Visuals screen linked'};
+  ws.onclose=()=>{live=false;$('screen').classList.remove('live');$('screen').title='Visuals screen not running. Start it with: node visuals/server.js';setTimeout(link,3000)};
+}
+const send=o=>{if(live)ws.send(JSON.stringify(o))};
+function cue(i,t,pt){   // tell the screen what fires at step i and how far ahead, so it lands with the sound
+  if(!live)return;
+  const v=TABS.filter(k=>pt[k][i]&&!M[k]);
+  if(v.length)send({t:'hit',in:+(t-ac.currentTime+(ac.outputLatency||0)).toFixed(4),v,a:!!(pt.acid[i]&&pt.acid[i].a)});
+}
+function band(lo,hi){
+  const hz=ac.sampleRate/N.an.fftSize;let s=0,n=0;
+  for(let k=Math.max(1,Math.round(lo/hz));k<=Math.min(fbuf.length-1,Math.round(hi/hz));k++){s+=fbuf[k];n++}
+  return n?+(s/n/255).toFixed(3):0;
+}
+setInterval(()=>{
+  if(!live)return;
+  // the screen follows what is sounding, so while a sequence plays it changes scene with the music, not with the editor
+  const q=cursor(),vs=q?q.sc:scene;
+  const s=JSON.stringify({t:'state',scene:vs.name,bpm:vs.bpm,sel,playing,key:tr,lock,pat:vs.pat,P,M,formula:FORM[sel](P[sel])});
+  if(s!==sent){ws.send(s);sent=s}
+  let b=[0,0,0,0];
+  if(N.an){fbuf=fbuf||new Uint8Array(N.an.frequencyBinCount);N.an.getByteFrequencyData(fbuf);
+    b=[band(25,150),band(150,600),band(600,3000),band(3000,12000)]}
+  send({t:'f',pos:q?+q.pos.toFixed(3):0,b});
+},16);
+$('screen').onclick=()=>window.open('http://'+VIS+'/','visuals');
+link();
 </script>
 </body>
 </html>
